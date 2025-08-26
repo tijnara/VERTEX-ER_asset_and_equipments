@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Fixed Asset Manager — VOS UI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="vos.css">
+    <style>
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+        }
+        /* Custom scrollbar for a better look */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #e2e8f0; }
+        ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        .modal {
+            position: fixed;
+            inset: 0;
+            display: none;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(4px);
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        .modal.open { display: flex; }
+        .drawer {
+            position: fixed;
+            inset: 0;
+            z-index: 40;
+            display: none;
+        }
+        .drawer.open { display: block; }
+        .drawer .mask {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(4px);
+        }
+        .drawer .panel {
+            position: absolute;
+            top: 0;
+            right: 0;
+            height: 100%;
+            width: 100%;
+            max-width: 450px;
+            padding: 1.5rem;
+            overflow-y: auto;
+        }
+        /* Custom prompt modal needs a higher z-index */
+        #prompt-modal {
+            z-index: 60;
+        }
+    </style>
+</head>
+<body>
+
+<header class="vos-header">
+    <div class="vos-header-inner">
+        <div class="vos-brand">VERTEX</div>
+        <div class="flex items-center gap-4">
+            <button class="vos-btn-primary text-white font-semibold py-2 px-4 rounded-lg" id="btn-new">+ New Asset</button>
+            <button class="vos-btn-secondary text-white font-semibold py-2 px-4 rounded-lg" id="btn-logout">Logout</button>
+        </div>
+    </div>
+</header>
+
+<!-- Sub-header for Page Title -->
+<div>
+    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
+        <h1 class="text-2xl font-semibold leading-6 text-slate-900">
+            Asset & Equipments
+        </h1>
+    </div>
+</div>
+
+
+<main class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+    <!-- Stat Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
+        <div class="vos-card p-6">
+            <div class="text-sm text-slate-500">Total Assets</div>
+            <div class="text-3xl font-bold text-slate-800" id="stat-total">0</div>
+        </div>
+        <div class="vos-card p-6">
+            <div class="text-sm text-slate-500">Total Value</div>
+            <div class="text-3xl font-bold text-slate-800" id="stat-total-cost">₱0.00</div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="vos-card p-4 mb-6">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <input id="search" placeholder="Search by name, employee, etc." class="w-full px-3 py-2 text-slate-900 border rounded-md" />
+            <select id="f-cat" class="w-full px-3 py-2 text-slate-900 border rounded-md"><option value="all">All Item Types</option><option>IT</option><option>Furniture</option><option>Vehicle</option><option>Machinery</option><option>Other</option></select>
+            <select id="f-class" class="w-full px-3 py-2 text-slate-900 border rounded-md"><option value="all">All Classifications</option></select>
+            <select id="f-dept" class="w-full px-3 py-2 text-slate-900 border rounded-md"><option value="all">All Departments</option></select>
+        </div>
+    </div>
+
+    <!-- Assets Table -->
+    <div class="vos-card overflow-x-auto">
+        <table class="w-full text-sm text-left vos-table">
+            <thead>
+            <tr>
+                <th class="px-6 py-3">Item Name</th>
+                <th class="px-6 py-3">Item Type</th>
+                <th class="px-6 py-3">Item Classification</th>
+            </tr>
+            </thead>
+            <tbody id="asset-body"></tbody>
+        </table>
+        <div id="no-results" class="text-center py-12 text-slate-500" style="display: none;">
+            <h3 class="font-semibold text-lg text-slate-600">No assets found</h3>
+            <p>Try adjusting your search or filter criteria.</p>
+        </div>
+    </div>
+</main>
+
+<!-- Modal Form -->
+<div class="modal" id="modal">
+    <div class="vos-card w-full max-w-4xl m-4">
+        <div class="flex justify-between items-center p-4 border-b">
+            <h3 id="modal-title" class="text-lg font-semibold">New Asset</h3>
+            <button class="p-2 rounded-full hover:bg-slate-100" onclick="closeModal()">
+                <svg class="w-5 h-5 text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
+            </button>
+        </div>
+        <form id="asset-form" class="p-4 max-h-[80vh] overflow-y-auto">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div><label class="label">Item Name</label><input name="itemName" required class="input"></div>
+                    <div><label class="label">Item Type</label><select name="itemType" required class="input"><option value="">Select...</option><option>IT</option><option>Furniture</option><option>Vehicle</option><option>Machinery</option><option>Other</option></select></div>
+                    <div>
+                        <label class="label">Classification</label>
+                        <div class="flex items-center gap-2">
+                            <select name="classification" required class="input"></select>
+                            <button type="button" id="btn-new-class" class="vos-btn-secondary p-2 rounded-full" title="Add New Classification">
+                                <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="label">Department</label>
+                        <div class="flex items-center gap-2">
+                            <select name="department" required class="input"></select>
+                            <button type="button" id="btn-new-dept" class="vos-btn-secondary p-2 rounded-full" title="Add New Department">
+                                <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div><label class="label">Quantity</label><input type="number" name="quantity" required class="input" value="1" min="1"></div>
+                    <div><label class="label">Cost per Item (PHP)</label><input type="number" step="0.01" name="costPerItem" required class="input"></div>
+                    <div><label class="label">Total Cost</label><input name="totalCost" class="input bg-slate-100" readonly></div>
+                    <div><label class="label">Purchase Date</label><input type="date" name="purchaseDate" required class="input"></div>
+                    <div><label class="label">Life Span (Years)</label><input type="number" name="lifeSpan" required class="input"></div>
+                    <div><label class="label">Condition</label><select name="condition" class="input"><option>New</option><option>Good</option><option>Fair</option><option>For Repair</option></select></div>
+                    <div><label class="label">Employee</label><input name="employee" class="input"></div>
+                    <div><label class="label">Encoder</label><input name="encoder" class="input"></div>
+                </div>
+                <div class="md:col-span-1">
+                    <label class="label">Image</label>
+                    <div class="w-full h-64 border-2 border-dashed rounded-lg flex items-center justify-center bg-slate-50">
+                        <img id="image-preview" src="https://placehold.co/400x300/e2e8f0/475569?text=No+Image" class="max-h-full max-w-full object-contain rounded">
+                    </div>
+                    <input type="file" name="image" id="image-uploader" class="input mt-2" accept="image/*">
+                    <input type="hidden" name="imageUrl">
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button type="button" class="vos-btn-secondary py-2 px-4 rounded-lg" onclick="closeModal()">Cancel</button>
+                <button type="submit" class="vos-btn-primary text-white font-semibold py-2 px-4 rounded-lg">Save Asset</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Drawer Details -->
+<div class="drawer" id="drawer">
+    <div class="mask" onclick="closeDrawer()"></div>
+    <div class="vos-card panel">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-lg font-semibold">Asset Details</h3>
+            <button class="p-2 rounded-full hover:bg-slate-100" onclick="closeDrawer()">
+                <svg class="w-5 h-5 text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
+            </button>
+        </div>
+        <div id="drawer-body" class="space-y-4"></div>
+    </div>
+</div>
+
+<!-- Custom Prompt Modal -->
+<div class="modal" id="prompt-modal">
+    <div class="vos-card w-full max-w-sm m-4">
+        <h3 id="prompt-title" class="text-lg font-semibold">Add New</h3>
+        <div class="mt-4">
+            <label id="prompt-label" class="label">Name</label>
+            <input id="prompt-input" class="input">
+            <div id="prompt-error" class="text-sm text-[var(--vos-danger)] mt-1" style="display: none;"></div>
+        </div>
+        <div class="mt-6 flex justify-end gap-3">
+            <button type="button" class="vos-btn-secondary py-2 px-4 rounded-lg" id="prompt-cancel">Cancel</button>
+            <button type="button" class="vos-btn-primary text-white font-semibold py-2 px-4 rounded-lg" id="prompt-save">Save</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- UTILITIES ---
+    const peso = n => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(+n || 0);
+    const generateNewAssetId = () => {
+        const maxId = assets.reduce((max, asset) => {
+            const idNum = parseInt(asset.id.split('-')[1], 10);
+            return idNum > max ? idNum : max;
+        }, 0);
+        const newIdNum = maxId + 1;
+        return `FA-${String(newIdNum).padStart(4, '0')}`;
+    };
+
+    // --- STATE ---
+    let classifications = ['Capitalized', 'Expense', 'Leased'];
+    let departments = ['Accounting', 'Human Resources', 'Logistics', 'Manufacturing'];
+    let assets = [
+        { id:'FA-0001', itemName:'Dell Latitude 7440 Laptop', itemType:'IT', classification: 'Capitalized', department:'Accounting', purchaseDate:'2022-03-15', costPerItem:78000, quantity: 1, totalCost: 78000, lifeSpan: 3, condition: 'Good', employee: 'Jane D.', encoder: 'Admin', imageUrl: 'https://placehold.co/400x300/e2e8f0/475569?text=Laptop' },
+        { id:'FA-0002', itemName:'Office Desk - Walnut 160cm', itemType:'Furniture', classification: 'Expense', department:'Human Resources', purchaseDate:'2021-10-01', costPerItem:12000, quantity: 5, totalCost: 60000, lifeSpan: 5, condition: 'New', employee: 'HR Department', encoder: 'Admin' },
+        { id:'FA-0003', itemName:'Toyota Hilux 2.4L', itemType:'Vehicle', classification: 'Capitalized', department:'Logistics', purchaseDate:'2020-01-20', costPerItem:980000, quantity: 1, totalCost: 980000, lifeSpan: 8, condition: 'For Repair', employee: 'Logistics', encoder: 'Admin' },
+        { id:'FA-0004', itemName:'Laser Cutter LC-900', itemType:'Machinery', classification: 'Capitalized', department:'Manufacturing', purchaseDate:'2018-07-05', costPerItem:1450000, quantity: 1, totalCost: 1450000, lifeSpan: 10, condition: 'Good', employee: 'Manufacturing', encoder: 'Admin' },
+    ];
+    let editingId = null;
+
+    // --- DOM ELEMENTS ---
+    const bodyEl = document.getElementById('asset-body');
+    const statTotalEl = document.getElementById('stat-total');
+    const statTotalCostEl = document.getElementById('stat-total-cost');
+    const modalEl = document.getElementById('modal');
+    const formEl = document.getElementById('asset-form');
+    const modalTitleEl = document.getElementById('modal-title');
+    const drawerEl = document.getElementById('drawer');
+    const drawerBodyEl = document.getElementById('drawer-body');
+    const noResultsEl = document.getElementById('no-results');
+    const searchEl = document.getElementById('search');
+    const catFilterEl = document.getElementById('f-cat');
+    const deptFilterEl = document.getElementById('f-dept');
+    const classFilterEl = document.getElementById('f-class');
+    const imagePreviewEl = document.getElementById('image-preview');
+    const imageUploaderEl = document.getElementById('image-uploader');
+    const promptModalEl = document.getElementById('prompt-modal');
+    const promptTitleEl = document.getElementById('prompt-title');
+    const promptLabelEl = document.getElementById('prompt-label');
+    const promptInputEl = document.getElementById('prompt-input');
+    const promptErrorEl = document.getElementById('prompt-error');
+    const promptSaveBtn = document.getElementById('prompt-save');
+    const promptCancelBtn = document.getElementById('prompt-cancel');
+    let currentPromptType = null;
+
+    // --- RENDER FUNCTION ---
+    function render() {
+        const q = searchEl.value.toLowerCase().trim();
+        const cat = catFilterEl.value;
+        const dept = deptFilterEl.value;
+        const classification = classFilterEl.value;
+        const filtered = assets.filter(a => {
+            const mq = !q || [a.id, a.itemName, a.itemType, a.department, a.employee || '', a.classification || ''].some(x => String(x).toLowerCase().includes(q));
+            const mc = cat === 'all' || a.itemType === cat;
+            const md = dept === 'all' || a.department === dept;
+            const mcl = classification === 'all' || a.classification === classification;
+            return mq && mc && md && mcl;
+        });
+
+        bodyEl.innerHTML = filtered.map(a => `
+        <tr class="border-b last:border-0">
+          <td class="px-6 py-4 font-medium text-slate-800"><a href="#" class="text-[var(--vos-primary)] hover:underline" onclick="event.preventDefault(); openDrawer('${a.id}')">${a.itemName}</a></td>
+          <td class="px-6 py-4">${a.itemType}</td>
+          <td class="px-6 py-4">${a.classification}</td>
+        </tr>`).join('');
+
+        noResultsEl.style.display = filtered.length === 0 ? 'block' : 'none';
+        statTotalEl.textContent = filtered.reduce((sum, a) => sum + a.quantity, 0);
+        statTotalCostEl.textContent = peso(filtered.reduce((s, a) => s + a.totalCost, 0));
+    }
+
+    function populateDynamicFilters() {
+        const allDepartments = [...new Set([...departments, ...assets.map(a => a.department).filter(Boolean)])].sort();
+        departments = allDepartments;
+        const deptOptions = allDepartments.map(d => `<option value="${d}">${d}</option>`).join('');
+        deptFilterEl.innerHTML = '<option value="all">All Departments</option>' + deptOptions;
+        formEl.elements.department.innerHTML = '<option value="">Select...</option>' + deptOptions;
+
+        const allClassifications = [...new Set([...classifications, ...assets.map(a => a.classification).filter(Boolean)])].sort();
+        classifications = allClassifications;
+        const classOptions = allClassifications.map(c => `<option value="${c}">${c}</option>`).join('');
+        classFilterEl.innerHTML = '<option value="all">All Classifications</option>' + classOptions;
+        formEl.elements.classification.innerHTML = '<option value="">Select...</option>' + classOptions;
+    }
+
+    // --- EVENT HANDLERS & ACTIONS ---
+    document.getElementById('btn-new').onclick = () => {
+        editingId = null;
+        formEl.reset();
+        imagePreviewEl.src = 'https://placehold.co/400x300/e2e8f0/475569?text=No+Image';
+        formEl.elements.imageUrl.value = '';
+        modalTitleEl.textContent = 'New Asset';
+        modalEl.classList.add('open');
+    };
+
+    document.getElementById('btn-logout').onclick = () => {
+        window.location.href = 'index.html';
+    };
+
+    function openPrompt(type) {
+        currentPromptType = type;
+        promptTitleEl.textContent = `Add New ${type}`;
+        promptLabelEl.textContent = `${type} Name`;
+        promptInputEl.value = '';
+        promptErrorEl.style.display = 'none';
+        promptModalEl.classList.add('open');
+        promptInputEl.focus();
+    }
+
+    document.getElementById('btn-new-class').onclick = () => openPrompt('Classification');
+    document.getElementById('btn-new-dept').onclick = () => openPrompt('Department');
+
+    promptCancelBtn.onclick = () => promptModalEl.classList.remove('open');
+
+    promptSaveBtn.onclick = () => {
+        const value = promptInputEl.value.trim();
+        if (!value) {
+            promptErrorEl.textContent = 'Name cannot be empty.';
+            promptErrorEl.style.display = 'block';
+            return;
+        }
+
+        let targetArray, formElement;
+        if (currentPromptType === 'Classification') {
+            targetArray = classifications;
+            formElement = formEl.elements.classification;
+        } else {
+            targetArray = departments;
+            formElement = formEl.elements.department;
+        }
+
+        const exists = targetArray.some(item => item.toLowerCase() === value.toLowerCase());
+        if (exists) {
+            promptErrorEl.textContent = `${currentPromptType} already exists.`;
+            promptErrorEl.style.display = 'block';
+            return;
+        }
+
+        targetArray.push(value);
+        populateDynamicFilters();
+        formElement.value = value;
+        promptModalEl.classList.remove('open');
+    };
+
+
+    formEl.onsubmit = e => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(formEl).entries());
+        data.costPerItem = +data.costPerItem;
+        data.quantity = +data.quantity;
+        data.totalCost = data.costPerItem * data.quantity;
+        data.lifeSpan = +data.lifeSpan;
+
+        if (editingId) {
+            const index = assets.findIndex(x => x.id === editingId);
+            if (index >= 0) {
+                data.id = editingId;
+                assets[index] = data;
+            }
+        } else {
+            data.id = generateNewAssetId();
+            assets.unshift(data);
+        }
+
+        editingId = null;
+        closeModal();
+        populateDynamicFilters();
+        render();
+    };
+
+    const updateTotalCost = () => {
+        const qty = +formEl.elements.quantity.value || 0;
+        const cost = +formEl.elements.costPerItem.value || 0;
+        formEl.elements.totalCost.value = peso(qty * cost);
+    };
+    formEl.elements.quantity.oninput = updateTotalCost;
+    formEl.elements.costPerItem.oninput = updateTotalCost;
+
+    imageUploaderEl.onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const imageUrl = event.target.result;
+                imagePreviewEl.src = imageUrl;
+                formEl.elements.imageUrl.value = imageUrl;
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    window.editAsset = (id) => {
+        const asset = assets.find(x => x.id === id);
+        if (!asset) return;
+        editingId = id;
+        modalTitleEl.textContent = 'Edit Asset';
+        for (const key in asset) {
+            if (formEl.elements[key]) {
+                formEl.elements[key].value = asset[key];
+            }
+        }
+        imagePreviewEl.src = asset.imageUrl || 'https://placehold.co/400x300/e2e8f0/475569?text=No+Image';
+        updateTotalCost();
+        modalEl.classList.add('open');
+    }
+
+    window.removeAsset = (id) => {
+        if (confirm(`Are you sure you want to delete asset ${id}?`)) {
+            assets = assets.filter(x => x.id !== id);
+            populateDynamicFilters();
+            render();
+        }
+    }
+
+    window.closeModal = () => {
+        modalEl.classList.remove('open');
+    }
+
+    window.openDrawer = (id) => {
+        const a = assets.find(x => x.id === id);
+        if (!a) return;
+
+        drawerBodyEl.innerHTML = `
+        <div class="vos-card mb-4">
+            <img src="${a.imageUrl || 'https://placehold.co/400x300/e2e8f0/475569?text=No+Image'}" class="w-full h-48 object-cover rounded-lg mb-4">
+            <div class="text-xl font-bold">${a.itemName}</div>
+            <div class="text-sm text-slate-500">${a.id}</div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+            ${DetailCard("Item Type", a.itemType)}
+            ${DetailCard("Classification", a.classification)}
+            ${DetailCard("Department", a.department, true)}
+            ${DetailCard("Employee", a.employee, true)}
+            ${DetailCard("Purchase Date", new Date(a.purchaseDate).toLocaleDateString())}
+            ${DetailCard("Quantity", a.quantity)}
+            ${DetailCard("Cost per Item", peso(a.costPerItem))}
+            ${DetailCard("Total Cost", `<strong class="text-[var(--vos-accent)]">${peso(a.totalCost)}</strong>`)}
+            ${DetailCard("Life Span", `${a.lifeSpan} years`)}
+            ${DetailCard("Condition", a.condition)}
+            ${DetailCard("Encoder", a.encoder, true)}
+        </div>
+        <div class="mt-4 flex gap-2">
+            <button class='vos-btn-primary text-white font-semibold py-2 px-4 rounded-lg w-full' onclick="editAsset('${a.id}'); closeDrawer();">Edit</button>
+            <button class='vos-btn-danger text-white font-semibold py-2 px-4 rounded-lg w-full' onclick="removeAsset('${a.id}'); closeDrawer();">Delete</button>
+        </div>
+      `;
+        drawerEl.classList.add('open');
+    }
+    const DetailCard = (label, value, full = false) => value ? `<div class="vos-card p-3 ${full ? 'col-span-2' : ''}"><div class="text-xs text-slate-500">${label}</div><div class="font-semibold">${value}</div></div>` : '';
+
+    window.closeDrawer = () => {
+        drawerEl.classList.remove('open');
+    }
+
+    // --- INITIALIZATION ---
+    searchEl.oninput = render;
+    catFilterEl.onchange = render;
+    deptFilterEl.onchange = render;
+    classFilterEl.onchange = render;
+
+    document.querySelectorAll('.label').forEach(el => el.classList.add('block', 'text-sm', 'font-medium', 'text-slate-700', 'mb-1'));
+    document.querySelectorAll('.input').forEach(el => el.classList.add('w-full', 'px-3', 'py-2', 'text-slate-900', 'border', 'rounded-md'));
+
+    document.addEventListener('DOMContentLoaded', () => {
+        populateDynamicFilters();
+        render();
+    });
+</script>
+</body>
+</html>

@@ -1,0 +1,118 @@
+/* VOS (VERTEX ERP) lightweight theme */
+:root {
+  --vos-primary: #0ea5a4;          /* teal-600 */
+  --vos-primary-hover: #0c8c8b;    /* darker teal */
+  --vos-secondary: #334155;        /* slate-700 */
+  --vos-secondary-hover: #1f2937;  /* gray-800 */
+  --vos-accent: #16a34a;           /* green-600 */
+  --vos-accent-hover: #15803d;     /* green-700 */
+  --vos-danger: #dc2626;           /* red-600 */
+  --vos-danger-hover: #b91c1c;     /* red-700 */
+  --vos-surface: #ffffff;
+  --vos-muted: #f1f5f9;            /* slate-100 */
+  --vos-text: #0f172a;             /* slate-900 */
+  --vos-border: #e2e8f0;           /* slate-200 */
+  --vos-radius: 12px;
+  --vos-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.1), 0 4px 6px -4px rgba(15, 23, 42, 0.1);
+}
+
+/* Base */
+body {
+  background-color: var(--vos-muted);
+  color: var(--vos-text);
+}
+
+/* Header */
+.vos-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: linear-gradient(90deg, #0b1220 0%, #1f2937 100%);
+  color: #e5e7eb;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.vos-header-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.vos-brand {
+  font-weight: 700;
+  letter-spacing: 0.025em;
+}
+
+/* Card */
+.vos-card {
+  border-radius: var(--vos-radius);
+  box-shadow: var(--vos-shadow) !important;
+  border: 1px solid var(--vos-border);
+  background-color: var(--vos-surface);
+}
+
+/* Buttons */
+.vos-btn-primary {
+  background-color: var(--vos-primary) !important;
+  border-color: var(--vos-primary) !important;
+}
+.vos-btn-primary:hover {
+  background-color: var(--vos-primary-hover) !important;
+}
+
+.vos-btn-secondary {
+  background-color: var(--vos-secondary) !important;
+  border-color: var(--vos-secondary) !important;
+  color: #ffffff !important;
+}
+.vos-btn-secondary:hover {
+  background-color: var(--vos-secondary-hover) !important;
+}
+
+.vos-btn-danger {
+  background-color: var(--vos-danger) !important;
+  border-color: var(--vos-danger) !important;
+  color: #ffffff !important;
+}
+.vos-btn-danger:hover {
+  background-color: var(--vos-danger-hover) !important;
+}
+
+.vos-btn-accent {
+  background-color: var(--vos-accent) !important;
+  border-color: var(--vos-accent) !important;
+  color: #ffffff !important;
+}
+.vos-btn-accent:hover {
+  background-color: var(--vos-accent-hover) !important;
+}
+
+/* Inputs */
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="email"],
+input[type="date"],
+input[type="datetime-local"],
+select, textarea {
+  border-radius: 10px !important;
+  border-color: var(--vos-border) !important;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid var(--vos-primary) !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(14, 165, 164, 0.25) !important;
+  border-color: var(--vos-primary) !important;
+}
+
+/* Tables */
+.vos-table thead th {
+  background-color: #f8fafc !important; /* slate-50 */
+  color: #475569 !important;            /* slate-600 */
+}
+.vos-table tbody tr:hover {
+  background-color: #f1f5f9;            /* slate-100 */
+}

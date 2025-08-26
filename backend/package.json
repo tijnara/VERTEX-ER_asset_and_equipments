@@ -1,0 +1,17 @@
+{
+  "name": "vertex-er-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal static server for VERTEX-ER Asset & Equipments",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

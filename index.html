@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - VERTEX Asset Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Link to your provided CSS file -->
+    <link rel="stylesheet" href="vos.css">
+    <style>
+        /* Additional styles to complement vos.css */
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+        }
+    </style>
+</head>
+<body>
+
+<div class="flex items-center justify-center min-h-screen p-4">
+    <div class="w-full max-w-sm">
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-slate-800">VERTEX</h1>
+            <h2 class="mt-1 text-xl font-semibold text-slate-600">Asset & Equipments</h2>
+        </div>
+
+        <div class="vos-card p-8">
+            <form id="login-form" class="space-y-6">
+                <div>
+                    <label for="email" class="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                    <input id="email" name="email" type="email" required
+                           class="w-full px-3 py-2 text-slate-900 border rounded-md focus:outline-none">
+                </div>
+                <div>
+                    <label for="password" class="block text-sm font-medium text-slate-700 mb-1">Password</label>
+                    <input id="password" name="password" type="password" required
+                           class="w-full px-3 py-2 text-slate-900 border rounded-md focus:outline-none">
+                </div>
+
+                <div id="error-message" class="text-sm text-center" style="display: none; color: var(--vos-danger);">
+                    Invalid email or password.
+                </div>
+
+                <div>
+                    <button type="submit"
+                            class="w-full vos-btn-primary text-white font-semibold py-2 px-4 rounded-lg transition-colors">
+                        Sign In
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('login-form').addEventListener('submit', async function(event) {
+        event.preventDefault();
+
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const errorMessage = document.getElementById('error-message');
+        const apiUrl = '/api/users';
+
+        errorMessage.style.display = 'none';
+
+        try {
+            const response = await fetch(apiUrl);
+            if (!response.ok) {
+                throw new Error('Network response was not ok.');
+            }
+            const users = await response.json();
+
+            // Find a user that matches the entered email and password
+            const validUser = users.find(user => user.email === email && user.password === password);
+
+            if (validUser) {
+                // On successful login, redirect to the asset manager page
+                window.location.href = 'asset-manager.html';
+            } else {
+                // Show an error message
+                errorMessage.textContent = 'Invalid email or password.';
+                errorMessage.style.display = 'block';
+            }
+        } catch (error) {
+            console.error('Login failed:', error);
+            errorMessage.textContent = 'Login service is unavailable. Please try again later.';
+            errorMessage.style.display = 'block';
+        }
+    });
+</script>
+
+</body>
+</html>
