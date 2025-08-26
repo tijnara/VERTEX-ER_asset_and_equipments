@@ -56,3 +56,48 @@ If all retries fail, stop the process using the port or pick a higher `PORT` and
 - Frontend example: `fetch('/api/users')`
 - To point to a different Java endpoint or host, set `USER_API_URL` in `backend/.env`.
 - To proxy more Java controllers (e.g., `AssetsEquipmentsController` at `/api/assets`), add a similar route in `backend/server.js` or extend the proxy.
+
+
+## Auto-login from external software
+
+This frontend supports auto-login so you can embed it in another application and pass the current user’s credentials.
+
+What it does:
+- The login page (index.html) includes script.js which handles auto-login and manual login.
+- When logged in, a session object is stored in sessionStorage under the key `vosUser`.
+- If a user is already logged in and visits the root, they are redirected to asset-manager.html.
+- The main UI (asset-manager.html) checks for `vosUser` and redirects back to index.html if missing. The Logout button clears the session and returns to index.html.
+
+Methods to auto-login:
+1) URL parameters
+   - Open the app with query parameters:
+     - http://localhost:3000/?email=user@example.com&token=XYZ
+       or
+     - http://localhost:3000/?email=user@example.com&password=secret
+   - Supported aliases: `email|username|user`, `password|pass`, `token|auth`.
+   - On load, the app stores a session and redirects to asset-manager.html.
+
+2) postMessage (for iframe/embedded scenarios)
+   - If you host index.html within your software (e.g., in a WebView or iframe), post a message to the frame:
+```js
+iframe.contentWindow.postMessage({
+  type: 'VOS_LOGIN',
+  email: 'user@example.com',
+  token: 'XYZ' // or password: 'secret'
+}, '*');
+```
+   - The app will store the session and redirect to asset-manager.html.
+
+Notes:
+- By default, credentials are not validated server-side. If you need server-side verification against your Java API before establishing the session, add a backend endpoint (e.g., POST /api/login) to validate credentials and then let script.js call it before storing the session.
+- The current Node server already proxies GET /api/users via USER_API_URL. You can extend backend/server.js similarly for other Java controllers (e.g., AssetsEquipmentsController).
+
+Manual login (fallback):
+- Without URL params or postMessage, the login form on index.html will store the session and redirect after you click Sign In.
+
+Testing:
+- Start the server (see instructions above) and open:
+  - Auto via token: http://localhost:3000/?email=you@domain.com&token=DEMO
+  - Auto via password: http://localhost:3000/?email=you@domain.com&password=demo
+  - Direct access guard: open http://localhost:3000/asset-manager.html without logging in, it should redirect to index.html.
+  - Logout: click Logout in asset-manager.html and you should return to index.html.

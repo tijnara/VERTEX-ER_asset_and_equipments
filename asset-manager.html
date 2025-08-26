@@ -60,6 +60,24 @@
     </style>
 </head>
 <body>
+<script>
+    // Auth guard for asset-manager
+    (function(){
+        try{
+            var user = sessionStorage.getItem('vosUser');
+            if(!user){ window.location.replace('index.html'); }
+        }catch(e){ window.location.replace('index.html'); }
+        window.addEventListener('DOMContentLoaded', function(){
+            var logoutBtn = document.getElementById('btn-logout');
+            if(logoutBtn){
+                logoutBtn.addEventListener('click', function(){
+                    try{ sessionStorage.removeItem('vosUser'); }catch(_){ }
+                    window.location.href = 'index.html';
+                });
+            }
+        });
+    })();
+</script>
 
 <header class="vos-header">
     <div class="vos-header-inner">
@@ -71,7 +89,6 @@
     </div>
 </header>
 
-<!-- Sub-header for Page Title -->
 <div>
     <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
         <h1 class="text-2xl font-semibold leading-6 text-slate-900">
@@ -82,7 +99,6 @@
 
 
 <main class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-    <!-- Stat Cards -->
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
         <div class="vos-card p-6">
             <div class="text-sm text-slate-500">Total Assets</div>
@@ -94,17 +110,15 @@
         </div>
     </div>
 
-    <!-- Filters -->
     <div class="vos-card p-4 mb-6">
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <input id="search" placeholder="Search by name, employee, etc." class="w-full px-3 py-2 text-slate-900 border rounded-md" />
-            <select id="f-cat" class="w-full px-3 py-2 text-slate-900 border rounded-md"><option value="all">All Item Types</option><option>IT</option><option>Furniture</option><option>Vehicle</option><option>Machinery</option><option>Other</option></select>
-            <select id="f-class" class="w-full px-3 py-2 text-slate-900 border rounded-md"><option value="all">All Classifications</option></select>
-            <select id="f-dept" class="w-full px-3 py-2 text-slate-900 border rounded-md"><option value="all">All Departments</option></select>
+            <select id="f-cat" class="w-full px-3 py-2 text-slate-900 border rounded-md"></select>
+            <select id="f-class" class="w-full px-3 py-2 text-slate-900 border rounded-md"></select>
+            <select id="f-dept" class="w-full px-3 py-2 text-slate-900 border rounded-md"></select>
         </div>
     </div>
 
-    <!-- Assets Table -->
     <div class="vos-card overflow-x-auto">
         <table class="w-full text-sm text-left vos-table">
             <thead>
@@ -114,7 +128,8 @@
                 <th class="px-6 py-3">Item Classification</th>
             </tr>
             </thead>
-            <tbody id="asset-body"></tbody>
+            <tbody id="asset-body">
+            </tbody>
         </table>
         <div id="no-results" class="text-center py-12 text-slate-500" style="display: none;">
             <h3 class="font-semibold text-lg text-slate-600">No assets found</h3>
@@ -123,7 +138,6 @@
     </div>
 </main>
 
-<!-- Modal Form -->
 <div class="modal" id="modal">
     <div class="vos-card w-full max-w-4xl m-4">
         <div class="flex justify-between items-center p-4 border-b">
@@ -136,7 +150,15 @@
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div><label class="label">Item Name</label><input name="itemName" required class="input"></div>
-                    <div><label class="label">Item Type</label><select name="itemType" required class="input"><option value="">Select...</option><option>IT</option><option>Furniture</option><option>Vehicle</option><option>Machinery</option><option>Other</option></select></div>
+                    <div>
+                        <label class="label">Item Type</label>
+                        <div class="flex items-center gap-2">
+                            <select name="itemType" required class="input"></select>
+                            <button type="button" id="btn-new-type" class="vos-btn-secondary p-2 rounded-full" title="Add New Item Type">
+                                <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
+                            </button>
+                        </div>
+                    </div>
                     <div>
                         <label class="label">Classification</label>
                         <div class="flex items-center gap-2">
@@ -181,7 +203,6 @@
     </div>
 </div>
 
-<!-- Drawer Details -->
 <div class="drawer" id="drawer">
     <div class="mask" onclick="closeDrawer()"></div>
     <div class="vos-card panel">
@@ -195,16 +216,15 @@
     </div>
 </div>
 
-<!-- Custom Prompt Modal -->
 <div class="modal" id="prompt-modal">
     <div class="vos-card w-full max-w-sm m-4">
-        <h3 id="prompt-title" class="text-lg font-semibold">Add New</h3>
-        <div class="mt-4">
+        <h3 id="prompt-title" class="text-lg font-semibold p-4 border-b">Add New</h3>
+        <div class="p-4">
             <label id="prompt-label" class="label">Name</label>
             <input id="prompt-input" class="input">
             <div id="prompt-error" class="text-sm text-[var(--vos-danger)] mt-1" style="display: none;"></div>
         </div>
-        <div class="mt-6 flex justify-end gap-3">
+        <div class="mt-2 p-4 flex justify-end gap-3 bg-slate-50 rounded-b-xl">
             <button type="button" class="vos-btn-secondary py-2 px-4 rounded-lg" id="prompt-cancel">Cancel</button>
             <button type="button" class="vos-btn-primary text-white font-semibold py-2 px-4 rounded-lg" id="prompt-save">Save</button>
         </div>
@@ -216,7 +236,7 @@
     const peso = n => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(+n || 0);
     const generateNewAssetId = () => {
         const maxId = assets.reduce((max, asset) => {
-            const idNum = parseInt(asset.id.split('-')[1], 10);
+            const idNum = parseInt(String(asset.id).split('-').pop(), 10);
             return idNum > max ? idNum : max;
         }, 0);
         const newIdNum = maxId + 1;
@@ -224,14 +244,10 @@
     };
 
     // --- STATE ---
+    let itemTypes = ['IT', 'Furniture', 'Vehicle', 'Machinery', 'Other'];
     let classifications = ['Capitalized', 'Expense', 'Leased'];
     let departments = ['Accounting', 'Human Resources', 'Logistics', 'Manufacturing'];
-    let assets = [
-        { id:'FA-0001', itemName:'Dell Latitude 7440 Laptop', itemType:'IT', classification: 'Capitalized', department:'Accounting', purchaseDate:'2022-03-15', costPerItem:78000, quantity: 1, totalCost: 78000, lifeSpan: 3, condition: 'Good', employee: 'Jane D.', encoder: 'Admin', imageUrl: 'https://placehold.co/400x300/e2e8f0/475569?text=Laptop' },
-        { id:'FA-0002', itemName:'Office Desk - Walnut 160cm', itemType:'Furniture', classification: 'Expense', department:'Human Resources', purchaseDate:'2021-10-01', costPerItem:12000, quantity: 5, totalCost: 60000, lifeSpan: 5, condition: 'New', employee: 'HR Department', encoder: 'Admin' },
-        { id:'FA-0003', itemName:'Toyota Hilux 2.4L', itemType:'Vehicle', classification: 'Capitalized', department:'Logistics', purchaseDate:'2020-01-20', costPerItem:980000, quantity: 1, totalCost: 980000, lifeSpan: 8, condition: 'For Repair', employee: 'Logistics', encoder: 'Admin' },
-        { id:'FA-0004', itemName:'Laser Cutter LC-900', itemType:'Machinery', classification: 'Capitalized', department:'Manufacturing', purchaseDate:'2018-07-05', costPerItem:1450000, quantity: 1, totalCost: 1450000, lifeSpan: 10, condition: 'Good', employee: 'Manufacturing', encoder: 'Admin' },
-    ];
+    let assets = [];
     let editingId = null;
 
     // --- DOM ELEMENTS ---
@@ -259,12 +275,29 @@
     const promptCancelBtn = document.getElementById('prompt-cancel');
     let currentPromptType = null;
 
+    // --- DATA FETCHING ---
+    async function fetchAssets() {
+        bodyEl.innerHTML = `<tr><td colspan="3" class="text-center py-12">Loading assets...</td></tr>`;
+        try {
+            const response = await fetch('/api/items');
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            const data = await response.json();
+            assets = data;
+        } catch (error) {
+            console.error("Could not fetch assets:", error);
+            bodyEl.innerHTML = `<tr><td colspan="3" class="text-center py-12 text-red-600">Failed to load assets. ${error.message}</td></tr>`;
+        }
+    }
+
     // --- RENDER FUNCTION ---
     function render() {
         const q = searchEl.value.toLowerCase().trim();
         const cat = catFilterEl.value;
         const dept = deptFilterEl.value;
         const classification = classFilterEl.value;
+
         const filtered = assets.filter(a => {
             const mq = !q || [a.id, a.itemName, a.itemType, a.department, a.employee || '', a.classification || ''].some(x => String(x).toLowerCase().includes(q));
             const mc = cat === 'all' || a.itemType === cat;
@@ -273,25 +306,38 @@
             return mq && mc && md && mcl;
         });
 
-        bodyEl.innerHTML = filtered.map(a => `
-        <tr class="border-b last:border-0">
-          <td class="px-6 py-4 font-medium text-slate-800"><a href="#" class="text-[var(--vos-primary)] hover:underline" onclick="event.preventDefault(); openDrawer('${a.id}')">${a.itemName}</a></td>
-          <td class="px-6 py-4">${a.itemType}</td>
-          <td class="px-6 py-4">${a.classification}</td>
-        </tr>`).join('');
+        if (filtered.length === 0) {
+            bodyEl.innerHTML = '';
+        } else {
+            bodyEl.innerHTML = filtered.map(a => `
+            <tr class="border-b last:border-0">
+              <td class="px-6 py-4 font-medium text-slate-800"><a href="#" class="text-[var(--vos-primary)] hover:underline" onclick="event.preventDefault(); openDrawer('${a.id}')">${a.itemName}</a></td>
+              <td class="px-6 py-4">${a.itemType}</td>
+              <td class="px-6 py-4">${a.classification}</td>
+            </tr>`).join('');
+        }
 
-        noResultsEl.style.display = filtered.length === 0 ? 'block' : 'none';
-        statTotalEl.textContent = filtered.reduce((sum, a) => sum + a.quantity, 0);
-        statTotalCostEl.textContent = peso(filtered.reduce((s, a) => s + a.totalCost, 0));
+        noResultsEl.style.display = filtered.length === 0 && assets.length > 0 ? 'block' : 'none';
+        statTotalEl.textContent = filtered.reduce((sum, a) => sum + (a.quantity || 0), 0);
+        statTotalCostEl.textContent = peso(filtered.reduce((s, a) => s + (a.totalCost || 0), 0));
     }
 
     function populateDynamicFilters() {
+        // Item Types
+        const allItemTypes = [...new Set([...itemTypes, ...assets.map(a => a.itemType).filter(Boolean)])].sort();
+        itemTypes = allItemTypes;
+        const typeOptions = allItemTypes.map(t => `<option value="${t}">${t}</option>`).join('');
+        catFilterEl.innerHTML = '<option value="all">All Item Types</option>' + typeOptions;
+        formEl.elements.itemType.innerHTML = '<option value="">Select...</option>' + typeOptions;
+
+        // Departments
         const allDepartments = [...new Set([...departments, ...assets.map(a => a.department).filter(Boolean)])].sort();
         departments = allDepartments;
         const deptOptions = allDepartments.map(d => `<option value="${d}">${d}</option>`).join('');
         deptFilterEl.innerHTML = '<option value="all">All Departments</option>' + deptOptions;
         formEl.elements.department.innerHTML = '<option value="">Select...</option>' + deptOptions;
 
+        // Classifications
         const allClassifications = [...new Set([...classifications, ...assets.map(a => a.classification).filter(Boolean)])].sort();
         classifications = allClassifications;
         const classOptions = allClassifications.map(c => `<option value="${c}">${c}</option>`).join('');
@@ -309,10 +355,6 @@
         modalEl.classList.add('open');
     };
 
-    document.getElementById('btn-logout').onclick = () => {
-        window.location.href = 'index.html';
-    };
-
     function openPrompt(type) {
         currentPromptType = type;
         promptTitleEl.textContent = `Add New ${type}`;
@@ -323,12 +365,29 @@
         promptInputEl.focus();
     }
 
+    document.getElementById('btn-new-type').onclick = () => openPrompt('Item Type');
     document.getElementById('btn-new-class').onclick = () => openPrompt('Classification');
     document.getElementById('btn-new-dept').onclick = () => openPrompt('Department');
 
-    promptCancelBtn.onclick = () => promptModalEl.classList.remove('open');
+    promptCancelBtn.onclick = () => {
+        if (promptSaveBtn.disabled) return;
+        promptModalEl.classList.remove('open');
+    };
 
-    promptSaveBtn.onclick = () => {
+    async function saveNewItemType(name) {
+        const response = await fetch('/api/item-types', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ name: name })
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({ message: 'Failed to save new type.' }));
+            throw new Error(err.message || `HTTP Error: ${response.status}`);
+        }
+        return await response.json();
+    }
+
+    promptSaveBtn.onclick = async () => {
         const value = promptInputEl.value.trim();
         if (!value) {
             promptErrorEl.textContent = 'Name cannot be empty.';
@@ -336,26 +395,46 @@
             return;
         }
 
-        let targetArray, formElement;
-        if (currentPromptType === 'Classification') {
-            targetArray = classifications;
-            formElement = formEl.elements.classification;
-        } else {
-            targetArray = departments;
-            formElement = formEl.elements.department;
-        }
+        promptSaveBtn.disabled = true;
+        promptSaveBtn.textContent = 'Saving...';
+        promptErrorEl.style.display = 'none';
 
-        const exists = targetArray.some(item => item.toLowerCase() === value.toLowerCase());
-        if (exists) {
-            promptErrorEl.textContent = `${currentPromptType} already exists.`;
+        try {
+            if (currentPromptType === 'Item Type') {
+                if (itemTypes.some(item => item.toLowerCase() === value.toLowerCase())) {
+                    throw new Error('Item Type already exists.');
+                }
+                const newItem = await saveNewItemType(value);
+                itemTypes.push(newItem.name); // Assume API returns { id, name }
+                populateDynamicFilters();
+                formEl.elements.itemType.value = newItem.name;
+                promptModalEl.classList.remove('open');
+            } else if (currentPromptType === 'Department') {
+                if (departments.some(item => item.toLowerCase() === value.toLowerCase())) {
+                    throw new Error('Department already exists.');
+                }
+                // NOTE: This remains a client-side only action as requested
+                departments.push(value);
+                populateDynamicFilters();
+                formEl.elements.department.value = value;
+                promptModalEl.classList.remove('open');
+            } else if (currentPromptType === 'Classification') {
+                if (classifications.some(item => item.toLowerCase() === value.toLowerCase())) {
+                    throw new Error('Classification already exists.');
+                }
+                // NOTE: This remains a client-side only action as requested
+                classifications.push(value);
+                populateDynamicFilters();
+                formEl.elements.classification.value = value;
+                promptModalEl.classList.remove('open');
+            }
+        } catch (error) {
+            promptErrorEl.textContent = error.message;
             promptErrorEl.style.display = 'block';
-            return;
+        } finally {
+            promptSaveBtn.disabled = false;
+            promptSaveBtn.textContent = 'Save';
         }
-
-        targetArray.push(value);
-        populateDynamicFilters();
-        formElement.value = value;
-        promptModalEl.classList.remove('open');
     };
 
 
@@ -368,10 +447,10 @@
         data.lifeSpan = +data.lifeSpan;
 
         if (editingId) {
-            const index = assets.findIndex(x => x.id === editingId);
+            const index = assets.findIndex(x => x.id == editingId);
             if (index >= 0) {
                 data.id = editingId;
-                assets[index] = data;
+                assets[index] = { ...assets[index], ...data };
             }
         } else {
             data.id = generateNewAssetId();
@@ -406,10 +485,12 @@
     };
 
     window.editAsset = (id) => {
-        const asset = assets.find(x => x.id === id);
+        const asset = assets.find(x => x.id == id);
         if (!asset) return;
         editingId = id;
+        closeDrawer();
         modalTitleEl.textContent = 'Edit Asset';
+        formEl.reset();
         for (const key in asset) {
             if (formEl.elements[key]) {
                 formEl.elements[key].value = asset[key];
@@ -422,7 +503,8 @@
 
     window.removeAsset = (id) => {
         if (confirm(`Are you sure you want to delete asset ${id}?`)) {
-            assets = assets.filter(x => x.id !== id);
+            assets = assets.filter(x => x.id != id);
+            closeDrawer();
             populateDynamicFilters();
             render();
         }
@@ -433,7 +515,7 @@
     }
 
     window.openDrawer = (id) => {
-        const a = assets.find(x => x.id === id);
+        const a = assets.find(x => x.id == id);
         if (!a) return;
 
         drawerBodyEl.innerHTML = `
@@ -447,17 +529,17 @@
             ${DetailCard("Classification", a.classification)}
             ${DetailCard("Department", a.department, true)}
             ${DetailCard("Employee", a.employee, true)}
-            ${DetailCard("Purchase Date", new Date(a.purchaseDate).toLocaleDateString())}
+            ${DetailCard("Purchase Date", a.purchaseDate ? new Date(a.purchaseDate).toLocaleDateString() : 'N/A')}
             ${DetailCard("Quantity", a.quantity)}
             ${DetailCard("Cost per Item", peso(a.costPerItem))}
             ${DetailCard("Total Cost", `<strong class="text-[var(--vos-accent)]">${peso(a.totalCost)}</strong>`)}
-            ${DetailCard("Life Span", `${a.lifeSpan} years`)}
+            ${DetailCard("Life Span", a.lifeSpan ? `${a.lifeSpan} years` : 'N/A')}
             ${DetailCard("Condition", a.condition)}
             ${DetailCard("Encoder", a.encoder, true)}
         </div>
-        <div class="mt-4 flex gap-2">
-            <button class='vos-btn-primary text-white font-semibold py-2 px-4 rounded-lg w-full' onclick="editAsset('${a.id}'); closeDrawer();">Edit</button>
-            <button class='vos-btn-danger text-white font-semibold py-2 px-4 rounded-lg w-full' onclick="removeAsset('${a.id}'); closeDrawer();">Delete</button>
+        <div class="mt-6 flex gap-2">
+            <button class='vos-btn-primary text-white font-semibold py-2 px-4 rounded-lg w-full' onclick="editAsset('${a.id}')">Edit</button>
+            <button class='vos-btn-danger text-white font-semibold py-2 px-4 rounded-lg w-full' onclick="removeAsset('${a.id}')">Delete</button>
         </div>
       `;
         drawerEl.classList.add('open');
@@ -477,7 +559,8 @@
     document.querySelectorAll('.label').forEach(el => el.classList.add('block', 'text-sm', 'font-medium', 'text-slate-700', 'mb-1'));
     document.querySelectorAll('.input').forEach(el => el.classList.add('w-full', 'px-3', 'py-2', 'text-slate-900', 'border', 'rounded-md'));
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
+        await fetchAssets();
         populateDynamicFilters();
         render();
     });
