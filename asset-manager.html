@@ -244,9 +244,9 @@
     };
 
     // --- STATE ---
-    let itemTypes = ['IT', 'Furniture', 'Vehicle', 'Machinery', 'Other'];
-    let classifications = ['Capitalized', 'Expense', 'Leased'];
-    let departments = ['Accounting', 'Human Resources', 'Logistics', 'Manufacturing'];
+    let itemTypes = [];
+    let classifications = [];
+    let departments = [];
     let assets = [];
     let editingId = null;
 
@@ -276,10 +276,11 @@
     let currentPromptType = null;
 
     // --- DATA FETCHING ---
+    const API_BASE = window.ASSET_API_BASE || (location.port === '3001' ? '' : 'http://localhost:3001');
     async function fetchAssets() {
         bodyEl.innerHTML = `<tr><td colspan="3" class="text-center py-12">Loading assets...</td></tr>`;
         try {
-            const response = await fetch('/api/items');
+            const response = await fetch(`${API_BASE}/api/items`);
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }
@@ -288,6 +289,50 @@
         } catch (error) {
             console.error("Could not fetch assets:", error);
             bodyEl.innerHTML = `<tr><td colspan="3" class="text-center py-12 text-red-600">Failed to load assets. ${error.message}</td></tr>`;
+        }
+    }
+
+    async function loadItemTypes() {
+        try {
+            const response = await fetch(`${API_BASE}/api/item-types`, { headers: { 'Accept': 'application/json' } });
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            const data = await response.json();
+            // Accept shapes: [{ id, name }] or with alternate keys
+            itemTypes = (Array.isArray(data) ? data.map(x => x?.name ?? x?.type_name ?? x?.typeName).filter(Boolean) : [])
+                .sort((a, b) => a.localeCompare(b));
+        } catch (error) {
+            console.error("Could not fetch item types:", error);
+            // Keep itemTypes as [] so UI shows empty list until user adds one
+        }
+    }
+
+    async function loadDepartments() {
+        try {
+            const response = await fetch(`${API_BASE}/api/departments`, { headers: { 'Accept': 'application/json' } });
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            const data = await response.json();
+            departments = (Array.isArray(data) ? data.map(x => x?.name ?? x?.department_name ?? x?.departmentName).filter(Boolean) : [])
+                .sort((a, b) => a.localeCompare(b));
+        } catch (error) {
+            console.error('Could not fetch departments:', error);
+        }
+    }
+
+    async function loadClassifications() {
+        try {
+            const response = await fetch(`${API_BASE}/api/classifications`, { headers: { 'Accept': 'application/json' } });
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            const data = await response.json();
+            classifications = (Array.isArray(data) ? data.map(x => x?.name ?? x?.classification_name ?? x?.classificationName).filter(Boolean) : [])
+                .sort((a, b) => a.localeCompare(b));
+        } catch (error) {
+            console.error('Could not fetch classifications:', error);
         }
     }
 
@@ -330,17 +375,13 @@
         catFilterEl.innerHTML = '<option value="all">All Item Types</option>' + typeOptions;
         formEl.elements.itemType.innerHTML = '<option value="">Select...</option>' + typeOptions;
 
-        // Departments
-        const allDepartments = [...new Set([...departments, ...assets.map(a => a.department).filter(Boolean)])].sort();
-        departments = allDepartments;
-        const deptOptions = allDepartments.map(d => `<option value="${d}">${d}</option>`).join('');
+        // Departments (use API-fetched list only)
+        const deptOptions = departments.map(d => `<option value="${d}">${d}</option>`).join('');
         deptFilterEl.innerHTML = '<option value="all">All Departments</option>' + deptOptions;
         formEl.elements.department.innerHTML = '<option value="">Select...</option>' + deptOptions;
 
-        // Classifications
-        const allClassifications = [...new Set([...classifications, ...assets.map(a => a.classification).filter(Boolean)])].sort();
-        classifications = allClassifications;
-        const classOptions = allClassifications.map(c => `<option value="${c}">${c}</option>`).join('');
+        // Classifications (use API-fetched list only)
+        const classOptions = classifications.map(c => `<option value="${c}">${c}</option>`).join('');
         classFilterEl.innerHTML = '<option value="all">All Classifications</option>' + classOptions;
         formEl.elements.classification.innerHTML = '<option value="">Select...</option>' + classOptions;
     }
@@ -375,13 +416,39 @@
     };
 
     async function saveNewItemType(name) {
-        const response = await fetch('/api/item-types', {
+        const response = await fetch(`${API_BASE}/api/item-types`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             body: JSON.stringify({ name: name })
         });
         if (!response.ok) {
             const err = await response.json().catch(() => ({ message: 'Failed to save new type.' }));
+            throw new Error(err.message || `HTTP Error: ${response.status}`);
+        }
+        return await response.json();
+    }
+
+    async function saveNewDepartment(name) {
+        const response = await fetch(`${API_BASE}/api/departments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({ message: 'Failed to save new department.' }));
+            throw new Error(err.message || `HTTP Error: ${response.status}`);
+        }
+        return await response.json();
+    }
+
+    async function saveNewClassification(name) {
+        const response = await fetch(`${API_BASE}/api/classifications`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({ message: 'Failed to save new classification.' }));
             throw new Error(err.message || `HTTP Error: ${response.status}`);
         }
         return await response.json();
@@ -413,19 +480,19 @@
                 if (departments.some(item => item.toLowerCase() === value.toLowerCase())) {
                     throw new Error('Department already exists.');
                 }
-                // NOTE: This remains a client-side only action as requested
-                departments.push(value);
+                const newDept = await saveNewDepartment(value);
+                await loadDepartments();
                 populateDynamicFilters();
-                formEl.elements.department.value = value;
+                formEl.elements.department.value = newDept.name || value;
                 promptModalEl.classList.remove('open');
             } else if (currentPromptType === 'Classification') {
                 if (classifications.some(item => item.toLowerCase() === value.toLowerCase())) {
                     throw new Error('Classification already exists.');
                 }
-                // NOTE: This remains a client-side only action as requested
-                classifications.push(value);
+                const newClass = await saveNewClassification(value);
+                await loadClassifications();
                 populateDynamicFilters();
-                formEl.elements.classification.value = value;
+                formEl.elements.classification.value = newClass.name || value;
                 promptModalEl.classList.remove('open');
             }
         } catch (error) {
@@ -560,7 +627,7 @@
     document.querySelectorAll('.input').forEach(el => el.classList.add('w-full', 'px-3', 'py-2', 'text-slate-900', 'border', 'rounded-md'));
 
     document.addEventListener('DOMContentLoaded', async () => {
-        await fetchAssets();
+        await Promise.all([loadItemTypes(), loadDepartments(), loadClassifications(), fetchAssets()]);
         populateDynamicFilters();
         render();
     });

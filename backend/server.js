@@ -6,21 +6,26 @@ const axios = require('axios');
 const path = require('path'); // Corrected to use the standard path module
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // ---- External API addresses ----
-const USER_API_URL    = 'http://goatedcodoer:8080/api/users';
-const PRODUCT_API_URL = 'http://goatedcodoer:8080/api/products';
-const BRANCH_API_URL  = 'http://goatedcodoer:8080/api/branches';
+const USER_API_URL     = 'http://goatedcodoer:8080/api/users';
+const PRODUCT_API_URL  = 'http://goatedcodoer:8080/api/products';
+const BRANCH_API_URL   = 'http://goatedcodoer:8080/api/branches';
+const ITEM_TYPE_API_URL = 'http://goatedcodoer:8080/api/item-types';
 
 // ---- Parsers & Static ----
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../frontend')));
-app.get('/', (_req, res) => res.sendFile(path.join(__dirname, '../frontend/index.html')));
+app.use(express.static(path.join(__dirname, '..')));
+app.get('/', (_req, res) => res.sendFile(path.join(__dirname, '../index.html')));
 
 // Note: This is a very permissive CORS setup.
 // For production, you might want to restrict allowedOrigins.
-const allowedOrigins = []; // Add specific origins if needed, e.g., ['http://localhost:63343']
+const allowedOrigins = ['http://localhost:3001',
+    'http://192.168.0.65:3001',
+    'http://localhost:63342',
+    'http://localhost:63343',
+    'http://192.168.100.100:3001',]; // Add specific origins if needed, e.g., ['http://localhost:63343']
 app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (origin && allowedOrigins.includes(origin)) {
@@ -40,6 +45,27 @@ app.use((req, res, next) => {
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // ---- Login (external) ----
+
+// Helper: detect DB connectivity/transport errors for fast, clear responses
+function isDbConnError(err) {
+    const msg = String(err && err.message || '').toLowerCase();
+    const code = err && (err.code || err.errno);
+    const netCodes = new Set(['ETIMEDOUT','ECONNREFUSED','ECONNRESET','ENETUNREACH','EHOSTUNREACH','PROTOCOL_CONNECTION_LOST']);
+    return netCodes.has(code) ||
+        msg.includes('timeout') || msg.includes('timed out') ||
+        msg.includes('connection lost') || msg.includes('connect') && msg.includes('refused');
+}
+
+// Optional in-memory fallback for dev when DB is unreachable
+const ITEM_TYPES_FALLBACK = [];
+let ITEM_TYPES_FALLBACK_ID = 1;
+// Fallback stores for Departments and Classifications when DB is optional/unavailable
+const DEPARTMENTS_FALLBACK = [];
+let DEPARTMENTS_FALLBACK_ID = 1;
+const CLASSIFICATIONS_FALLBACK = [];
+let CLASSIFICATIONS_FALLBACK_ID = 1;
+const DB_OPTIONAL = String(process.env.DB_OPTIONAL || 'true').toLowerCase() === 'true';
+
 app.post('/api/login', async (req, res) => {
     try {
         const { email, password } = req.body || {};
@@ -193,27 +219,206 @@ app.post('/api/products', async (req, res) => {
 // Create a new item type in the local DB
 app.post('/api/item-types', async (req, res) => {
     try {
-        const { typeName } = req.body || {};
-        if (!typeName || !String(typeName).trim()) {
-            return res.status(400).json({ message: 'typeName is required.' });
+        const rawName = (req.body && (req.body.name ?? req.body.typeName)) || '';
+        if (!rawName || !String(rawName).trim()) {
+            return res.status(400).json({ message: 'name is required.' });
+        }
+        const name = cleanName(rawName);
+
+        // Try external service first
+        try {
+            const payload = { name, typeName: name };
+            const { data } = await axios.post(ITEM_TYPE_API_URL, payload, { timeout: 15000, headers: { 'Content-Type': 'application/json' } });
+            const out = {
+                id: data?.id ?? data?.type_id ?? data?.typeId,
+                name: data?.name ?? data?.type_name ?? data?.typeName ?? name,
+            };
+            if (!out.id && data?.type) {
+                out.id = data.type.id ?? data.type.type_id ?? data.type.typeId;
+                out.name = data.type.name ?? data.type.type_name ?? data.type.typeName ?? out.name;
+            }
+            return res.status(201).json(out);
+        } catch (extErr) {
+            const status = extErr?.response?.status;
+            if (status === 409) {
+                const msg = extErr?.response?.data?.message || 'An item type with the same name already exists.';
+                return res.status(409).json({ message: msg });
+            }
+            if (status && status < 500) {
+                const msg = extErr?.response?.data?.message || 'External service rejected the request.';
+                return res.status(status).json({ message: msg });
+            }
+            console.warn('External item-type service unavailable, falling back to local DB:', extErr?.message || extErr);
         }
 
-        const name = cleanName(typeName);
-
+        // Fallback to local DB
         const insertSql = `
-      INSERT INTO item_types (type_name)
-      VALUES (?)
-    `;
-        const [result] = await pool.query(insertSql, [name]);
-
-        const type = { type_id: result.insertId, type_name: name };
-        return res.status(201).json({ message: 'Item Type created successfully.', type });
-    } catch (err) {
-        console.error('Item Types POST error (local DB):', err?.message || err);
-        if (err && (err.code === 'ER_DUP_ENTRY' || String(err.message || '').toLowerCase().includes('duplicate'))) {
-            return res.status(409).json({ message: 'An item type with the same name already exists.' });
+            INSERT INTO item_types (type_name)
+            VALUES (?)
+        `;
+        try {
+            const [result] = await pool.query(insertSql, [name]);
+            return res.status(201).json({ id: result.insertId, name });
+        } catch (dbErr) {
+            if (isDbConnError(dbErr)) {
+                console.error('Item Types DB connection error:', dbErr?.message || dbErr);
+                if (DB_OPTIONAL) {
+                    const id = ITEM_TYPES_FALLBACK_ID++;
+                    ITEM_TYPES_FALLBACK.push({ id, name });
+                    return res.status(201).json({ id, name, fallback: true });
+                }
+                return res.status(503).json({ message: 'Database is unreachable for item types. Check DB settings/network or enable DB_OPTIONAL=true for dev fallback.' });
+            }
+            if (dbErr && (dbErr.code === 'ER_DUP_ENTRY' || String(dbErr.message || '').toLowerCase().includes('duplicate'))) {
+                return res.status(409).json({ message: 'An item type with the same name already exists.' });
+            }
+            throw dbErr;
         }
-        return res.status(500).json({ message: 'Failed to create item type in database.' });
+    } catch (err) {
+        console.error('Item Types POST error:', err?.message || err);
+        return res.status(500).json({ message: 'Failed to create item type.' });
+    }
+});
+
+// Item Types: external-first (goatedcodoer) with graceful fallbacks to local DB and in-memory
+app.get('/api/item-types', async (_req, res) => {
+    try {
+        // Try external service first
+        try {
+            const { data: types } = await axios.get(ITEM_TYPE_API_URL, { timeout: 15000 });
+            const data = (types || []).map(t => ({
+                id: t?.id ?? t?.type_id ?? t?.typeId,
+                name: t?.name ?? t?.type_name ?? t?.typeName
+            })).filter(x => x && x.name).sort((a, b) => a.name.localeCompare(b.name));
+            return res.json(data);
+        } catch (extErr) {
+            // If external service responds with an error code, or connectivity fails, fall back to local DB
+            const status = extErr?.response?.status;
+            if (status) {
+                console.warn('Item Types external service error status:', status);
+            } else {
+                console.error('Item Types external connectivity error:', extErr?.message || extErr);
+            }
+
+            const selectSql = 'SELECT id, type_name FROM item_types ORDER BY type_name ASC';
+            try {
+                const [rows] = await pool.query(selectSql);
+                const data = (rows || []).map(r => ({ id: r.id, name: r.type_name }));
+                return res.json(data);
+            } catch (dbErr) {
+                if (isDbConnError(dbErr)) {
+                    console.error('Item Types GET DB connection error:', dbErr?.message || dbErr);
+                    if (DB_OPTIONAL) {
+                        return res.json(ITEM_TYPES_FALLBACK.map(x => ({ id: x.id, name: x.name })));
+                    }
+                    return res.status(503).json({ message: 'Database is unreachable for item types.' });
+                }
+                throw dbErr;
+            }
+        }
+    } catch (err) {
+        console.error('Item Types GET error:', err?.message || err);
+        return res.status(500).json({ message: 'Failed to load item types.' });
+    }
+});
+
+//
+// -------- DEPARTMENTS (LOCAL DB first, in-memory fallback) --------
+//
+app.get('/api/departments', async (_req, res) => {
+    try {
+        const [rows] = await pool.query('SELECT id, name FROM departments ORDER BY name ASC');
+        const data = (rows || []).map(r => ({ id: r.id, name: r.name }));
+        return res.json(data);
+    } catch (dbErr) {
+        if (isDbConnError(dbErr)) {
+            console.error('Departments GET DB connection error:', dbErr?.message || dbErr);
+            if (DB_OPTIONAL) {
+                return res.json(DEPARTMENTS_FALLBACK.map(x => ({ id: x.id, name: x.name })));
+            }
+            return res.status(503).json({ message: 'Database is unreachable for departments.' });
+        }
+        console.error('Departments GET error:', dbErr?.message || dbErr);
+        return res.status(500).json({ message: 'Failed to load departments.' });
+    }
+});
+
+app.post('/api/departments', async (req, res) => {
+    try {
+        const rawName = (req.body && (req.body.name ?? req.body.departmentName)) || '';
+        const name = String(rawName || '').trim();
+        if (!name) return res.status(400).json({ message: 'name is required.' });
+        try {
+            const [result] = await pool.query('INSERT INTO departments (name) VALUES (?)', [name]);
+            return res.status(201).json({ id: result.insertId, name });
+        } catch (dbErr) {
+            if (isDbConnError(dbErr)) {
+                console.error('Departments POST DB connection error:', dbErr?.message || dbErr);
+                if (DB_OPTIONAL) {
+                    const id = DEPARTMENTS_FALLBACK_ID++;
+                    DEPARTMENTS_FALLBACK.push({ id, name });
+                    return res.status(201).json({ id, name, fallback: true });
+                }
+                return res.status(503).json({ message: 'Database is unreachable for departments.' });
+            }
+            if (dbErr && (dbErr.code === 'ER_DUP_ENTRY' || String(dbErr.message || '').toLowerCase().includes('duplicate'))) {
+                return res.status(409).json({ message: 'A department with the same name already exists.' });
+            }
+            throw dbErr;
+        }
+    } catch (err) {
+        console.error('Departments POST error:', err?.message || err);
+        return res.status(500).json({ message: 'Failed to create department.' });
+    }
+});
+
+//
+// -------- CLASSIFICATIONS (LOCAL DB first, in-memory fallback) --------
+//
+app.get('/api/classifications', async (_req, res) => {
+    try {
+        const [rows] = await pool.query('SELECT id, name FROM classifications ORDER BY name ASC');
+        const data = (rows || []).map(r => ({ id: r.id, name: r.name }));
+        return res.json(data);
+    } catch (dbErr) {
+        if (isDbConnError(dbErr)) {
+            console.error('Classifications GET DB connection error:', dbErr?.message || dbErr);
+            if (DB_OPTIONAL) {
+                return res.json(CLASSIFICATIONS_FALLBACK.map(x => ({ id: x.id, name: x.name })));
+            }
+            return res.status(503).json({ message: 'Database is unreachable for classifications.' });
+        }
+        console.error('Classifications GET error:', dbErr?.message || dbErr);
+        return res.status(500).json({ message: 'Failed to load classifications.' });
+    }
+});
+
+app.post('/api/classifications', async (req, res) => {
+    try {
+        const rawName = (req.body && (req.body.name ?? req.body.classificationName)) || '';
+        const name = String(rawName || '').trim();
+        if (!name) return res.status(400).json({ message: 'name is required.' });
+        try {
+            const [result] = await pool.query('INSERT INTO classifications (name) VALUES (?)', [name]);
+            return res.status(201).json({ id: result.insertId, name });
+        } catch (dbErr) {
+            if (isDbConnError(dbErr)) {
+                console.error('Classifications POST DB connection error:', dbErr?.message || dbErr);
+                if (DB_OPTIONAL) {
+                    const id = CLASSIFICATIONS_FALLBACK_ID++;
+                    CLASSIFICATIONS_FALLBACK.push({ id, name });
+                    return res.status(201).json({ id, name, fallback: true });
+                }
+                return res.status(503).json({ message: 'Database is unreachable for classifications.' });
+            }
+            if (dbErr && (dbErr.code === 'ER_DUP_ENTRY' || String(dbErr.message || '').toLowerCase().includes('duplicate'))) {
+                return res.status(409).json({ message: 'A classification with the same name already exists.' });
+            }
+            throw dbErr;
+        }
+    } catch (err) {
+        console.error('Classifications POST error:', err?.message || err);
+        return res.status(500).json({ message: 'Failed to create classification.' });
     }
 });
 
@@ -289,4 +494,15 @@ app.listen(PORT, HOST, () => {
     const localIp = results.Ethernet?.[0] || results['Wi-Fi']?.[0] || '127.0.0.1';
 
     console.log(`API + static files at http://localhost:${PORT} (or http://${localIp}:${PORT} on your local network)`);
+});
+
+// ---- Assets (placeholder route) ----
+app.get('/api/items', async (_req, res) => {
+    try {
+        // Placeholder: return empty assets list; wire to DB when available
+        res.json([]);
+    } catch (err) {
+        console.error('Items GET error:', err?.message || err);
+        res.status(500).json({ message: 'Failed to load items.' });
+    }
 });

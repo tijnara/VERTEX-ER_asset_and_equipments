@@ -32,21 +32,21 @@ This backend serves your frontend files (index.html, asset-manager.html, vos.css
    ```
 
 ## Access
-- App: http://localhost:3000
-- Health: http://localhost:3000/health
+- App: http://localhost:3001
+- Health: http://localhost:3001/health
 
 The server serves static files from the project root (`..`), so both `index.html` and `asset-manager.html` are available directly.
 
 ## Configuration
 - Environment file: `backend\.env`
-  - `PORT=3000` (change if needed)
+  - `PORT=3001` (change if needed)
   - `USER_API_URL=http://goatedcodoer:8080/api/users`  # Java API endpoint to proxy
 - Server file: `backend\server.js`
 
 Port handling:
 - If the chosen PORT is already in use, the server automatically tries the next ports (e.g., 3001, 3002, …) up to a limit and logs the final URL.
 - You can control this via `backend/.env`:
-  - `PORT=3000`          # starting port
+  - `PORT=3001`          # starting port
   - `HOST=0.0.0.0`       # optional bind address
   - `PORT_RETRY_MAX=10`  # optional number of additional ports to try
 If all retries fail, stop the process using the port or pick a higher `PORT` and try again.
@@ -71,9 +71,9 @@ What it does:
 Methods to auto-login:
 1) URL parameters
    - Open the app with query parameters:
-     - http://localhost:3000/?email=user@example.com&token=XYZ
+     - http://localhost:3001/?email=user@example.com&token=XYZ
        or
-     - http://localhost:3000/?email=user@example.com&password=secret
+     - http://localhost:3001/?email=user@example.com&password=secret
    - Supported aliases: `email|username|user`, `password|pass`, `token|auth`.
    - On load, the app stores a session and redirects to asset-manager.html.
 
@@ -97,7 +97,7 @@ Manual login (fallback):
 
 Testing:
 - Start the server (see instructions above) and open:
-  - Auto via token: http://localhost:3000/?email=you@domain.com&token=DEMO
-  - Auto via password: http://localhost:3000/?email=you@domain.com&password=demo
-  - Direct access guard: open http://localhost:3000/asset-manager.html without logging in, it should redirect to index.html.
+  - Auto via token: http://localhost:3001/?email=you@domain.com&token=DEMO
+  - Auto via password: http://localhost:3001/?email=you@domain.com&password=demo
+  - Direct access guard: open http://localhost:3001/asset-manager.html without logging in, it should redirect to index.html.
   - Logout: click Logout in asset-manager.html and you should return to index.html.
