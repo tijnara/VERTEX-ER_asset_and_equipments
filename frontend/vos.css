@@ -1,0 +1,158 @@
+/* ============ VOS Design Tokens ============ */
+:root{
+    /* Brand palette */
+    --vos-primary: #1e88e5;      /* Blue (you can change to green: #16a34a) */
+    --vos-primary-600: #1e88e5;
+    --vos-primary-700: #1669c1;
+
+    --vos-accent:  #0ea5e9;      /* Accent blue */
+    --vos-success: #16a34a;      /* Green */
+    --vos-warning: #f59e0b;      /* Amber */
+    --vos-danger:  #dc2626;      /* Red */
+
+    /* Surface */
+    --vos-bg:      #f8fafc;      /* slate-50 */
+    --vos-card:    #ffffff;
+    --vos-border:  #e2e8f0;      /* slate-200 */
+    --vos-muted:   #64748b;      /* slate-500 */
+    --vos-text:    #0f172a;      /* slate-900 */
+}
+
+/* Global */
+html,body{ height:100%; }
+body{
+    background: var(--vos-bg);
+    color: var(--vos-text);
+    font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Focus rings */
+button:focus, input:focus, select:focus, textarea:focus{
+    outline: 2px solid rgba(30,136,229,.35);
+    outline-offset: 2px;
+    box-shadow: none;
+}
+
+/* ============ Header ============ */
+.vos-header{
+    background: var(--vos-card);
+    border-bottom: 1px solid var(--vos-border);
+    position: sticky;
+    top: 0;
+    z-index: 30;
+}
+.vos-header-inner{
+    max-width: 80rem; /* 1280px */
+    margin: 0 auto;
+    padding: .75rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.vos-brand{
+    font-weight: 700;
+    letter-spacing: .06em;
+    color: var(--vos-primary);
+}
+
+/* ============ Cards ============ */
+.vos-card{
+    background: var(--vos-card);
+    border: 1px solid var(--vos-border);
+    border-radius: .75rem;       /* rounded-xl */
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+
+/* ============ Buttons ============ */
+.vos-btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    padding: .5rem .875rem;
+    border-radius: .5rem;
+    font-weight: 600;
+    line-height: 1.25rem;
+    border: 1px solid transparent;
+    transition: background .15s ease, color .15s ease, border-color .15s ease, opacity .15s ease;
+    cursor: pointer;
+}
+
+.vos-btn-primary{
+    composes: vos-btn;
+    background: var(--vos-primary);
+    color: #fff;
+}
+.vos-btn-primary:hover{ background: var(--vos-primary-700); }
+
+.vos-btn-secondary{
+    composes: vos-btn;
+    background: #0f172a; /* slate-900 to ensure white text as your HTML expects */
+    color: #fff;
+}
+.vos-btn-secondary:hover{ opacity: .9; }
+
+.vos-btn-danger{
+    composes: vos-btn;
+    background: var(--vos-danger);
+    color: #fff;
+}
+.vos-btn-danger:hover{ filter: brightness(.95); }
+
+/* For browsers without 'composes:' support, duplicate base */
+.vos-btn-primary, .vos-btn-secondary, .vos-btn-danger{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    padding: .5rem .875rem;
+    border-radius: .5rem;
+    font-weight: 600;
+    line-height: 1.25rem;
+    border: 1px solid transparent;
+    transition: background .15s ease, color .15s ease, border-color .15s ease, opacity .15s ease;
+    cursor: pointer;
+}
+
+/* ============ Tables ============ */
+.vos-table{
+    width: 100%;
+    border-collapse: collapse;
+}
+.vos-table thead tr{
+    background: #f1f5f9; /* slate-100 */
+}
+.vos-table th, .vos-table td{
+    padding: .75rem 1rem;
+    border-top: 1px solid var(--vos-border);
+    vertical-align: top;
+}
+.vos-table th{
+    text-align: left;
+    color: #334155; /* slate-700 */
+    font-weight: 600;
+}
+
+/* ============ Forms helpers (used by your script) ============ */
+.label{
+    display:block;
+    font-size:.875rem;
+    font-weight:600;
+    color:#334155;
+    margin-bottom:.25rem;
+}
+.input{
+    width:100%;
+    padding:.5rem .75rem;
+    color:#0f172a;
+    background:#fff;
+    border:1px solid var(--vos-border);
+    border-radius:.5rem;
+}
+
+/* ============ Utilities ============ */
+.text-danger{ color: var(--vos-danger); }
+.bg-danger{ background: var(--vos-danger); color:#fff; }
+.text-accent{ color: var(--vos-accent); }

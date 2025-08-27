@@ -57,20 +57,31 @@
         #prompt-modal {
             z-index: 60;
         }
+        /* MODIFIED: Added styles for the toast notifications */
+        .toast {
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        .toast.show {
+            transform: translateX(0);
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
 <script>
-    // Auth guard for asset-manager
+    // Auth guard for asset-manager (persisted via localStorage)
     (function(){
         try{
-            var user = sessionStorage.getItem('vosUser');
+            var user = localStorage.getItem('vosUser');
             if(!user){ window.location.replace('index.html'); }
         }catch(e){ window.location.replace('index.html'); }
         window.addEventListener('DOMContentLoaded', function(){
             var logoutBtn = document.getElementById('btn-logout');
             if(logoutBtn){
                 logoutBtn.addEventListener('click', function(){
+                    try{ localStorage.removeItem('vosUser'); localStorage.removeItem('userId'); }catch(_){ }
                     try{ sessionStorage.removeItem('vosUser'); }catch(_){ }
                     window.location.href = 'index.html';
                 });
@@ -78,6 +89,8 @@
         });
     })();
 </script>
+
+<div id="toast-container" class="fixed top-5 right-5 z-[100] space-y-2"></div>
 
 <header class="vos-header">
     <div class="vos-header-inner">
@@ -143,7 +156,7 @@
         <div class="flex justify-between items-center p-4 border-b">
             <h3 id="modal-title" class="text-lg font-semibold">New Asset</h3>
             <button class="p-2 rounded-full hover:bg-slate-100" onclick="closeModal()">
-                <svg class="w-5 h-5 text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
+                <svg class="w-5 h-5 text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708 .708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
             </button>
         </div>
         <form id="asset-form" class="p-4 max-h-[80vh] overflow-y-auto">
@@ -153,7 +166,7 @@
                     <div>
                         <label class="label">Item Type</label>
                         <div class="flex items-center gap-2">
-                            <select name="itemType" required class="input"></select>
+                            <select name="itemTypeId" required class="input"></select>
                             <button type="button" id="btn-new-type" class="vos-btn-secondary p-2 rounded-full" title="Add New Item Type">
                                 <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
                             </button>
@@ -162,7 +175,7 @@
                     <div>
                         <label class="label">Classification</label>
                         <div class="flex items-center gap-2">
-                            <select name="classification" required class="input"></select>
+                            <select name="classificationId" required class="input"></select>
                             <button type="button" id="btn-new-class" class="vos-btn-secondary p-2 rounded-full" title="Add New Classification">
                                 <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
                             </button>
@@ -170,21 +183,22 @@
                     </div>
                     <div>
                         <label class="label">Department</label>
-                        <div class="flex items-center gap-2">
-                            <select name="department" required class="input"></select>
-                            <button type="button" id="btn-new-dept" class="vos-btn-secondary p-2 rounded-full" title="Add New Department">
-                                <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
-                            </button>
-                        </div>
+                        <select name="departmentId" required class="input"></select>
                     </div>
-                    <div><label class="label">Quantity</label><input type="number" name="quantity" required class="input" value="1" min="1"></div>
-                    <div><label class="label">Cost per Item (PHP)</label><input type="number" step="0.01" name="costPerItem" required class="input"></div>
-                    <div><label class="label">Total Cost</label><input name="totalCost" class="input bg-slate-100" readonly></div>
+
+                    <div><label class="label">Cost (PHP)</label><input type="number" step="0.01" name="totalCost" required class="input"></div>
                     <div><label class="label">Purchase Date</label><input type="date" name="purchaseDate" required class="input"></div>
                     <div><label class="label">Life Span (Years)</label><input type="number" name="lifeSpan" required class="input"></div>
-                    <div><label class="label">Condition</label><select name="condition" class="input"><option>New</option><option>Good</option><option>Fair</option><option>For Repair</option></select></div>
-                    <div><label class="label">Employee</label><input name="employee" class="input"></div>
-                    <div><label class="label">Encoder</label><input name="encoder" class="input"></div>
+                    <div><label class="label">Condition</label><select name="condition" class="input"><option>Good</option><option>Bad</option><option>Under Maintenance</option><option>Discontinued</option></select></div>
+
+                    <div><label class="label">Employee</label><select name="employeeId" required class="input"></select></div>
+                    <div><label class="label">Encoder</label><select name="encoderId" required class="input"></select></div>
+
+                    <input type="hidden" name="employeeName">
+                    <input type="hidden" name="encoderName">
+                    <input type="hidden" name="itemTypeName">
+                    <input type="hidden" name="classificationName">
+                    <input type="hidden" name="departmentName">
                 </div>
                 <div class="md:col-span-1">
                     <label class="label">Image</label>
@@ -209,7 +223,7 @@
         <div class="flex justify-between items-center mb-6">
             <h3 class="text-lg font-semibold">Asset Details</h3>
             <button class="p-2 rounded-full hover:bg-slate-100" onclick="closeDrawer()">
-                <svg class="w-5 h-5 text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
+                <svg class="w-5 h-5 text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708 .708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
             </button>
         </div>
         <div id="drawer-body" class="space-y-4"></div>
@@ -234,20 +248,40 @@
 <script>
     // --- UTILITIES ---
     const peso = n => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(+n || 0);
-    const generateNewAssetId = () => {
-        const maxId = assets.reduce((max, asset) => {
-            const idNum = parseInt(String(asset.id).split('-').pop(), 10);
-            return idNum > max ? idNum : max;
-        }, 0);
-        const newIdNum = maxId + 1;
-        return `FA-${String(newIdNum).padStart(4, '0')}`;
-    };
+
+    // MODIFIED: Added a toast notification function
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = 'toast p-4 rounded-lg shadow-lg text-white font-semibold';
+        toast.textContent = message;
+
+        if (type === 'error') {
+            toast.classList.add('bg-red-500');
+        } else {
+            toast.classList.add('bg-green-500');
+        }
+
+        container.appendChild(toast);
+
+        // Animate in
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+
+        // Animate out and remove after 3 seconds
+        setTimeout(() => {
+            toast.classList.remove('show');
+            toast.addEventListener('transitionend', () => toast.remove());
+        }, 3000);
+    }
 
     // --- STATE ---
     let itemTypes = [];
     let classifications = [];
     let departments = [];
     let assets = [];
+    let users = [];
     let editingId = null;
 
     // --- DOM ELEMENTS ---
@@ -277,6 +311,7 @@
 
     // --- DATA FETCHING ---
     const API_BASE = window.ASSET_API_BASE || (location.port === '3001' ? '' : 'http://localhost:3001');
+
     async function fetchAssets() {
         bodyEl.innerHTML = `<tr><td colspan="3" class="text-center py-12">Loading assets...</td></tr>`;
         try {
@@ -284,8 +319,8 @@
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }
-            const data = await response.json();
-            assets = data;
+            assets = await response.json();
+            render();
         } catch (error) {
             console.error("Could not fetch assets:", error);
             bodyEl.innerHTML = `<tr><td colspan="3" class="text-center py-12 text-red-600">Failed to load assets. ${error.message}</td></tr>`;
@@ -294,45 +329,45 @@
 
     async function loadItemTypes() {
         try {
-            const response = await fetch(`${API_BASE}/api/item-types`, { headers: { 'Accept': 'application/json' } });
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
-            const data = await response.json();
-            // Accept shapes: [{ id, name }] or with alternate keys
-            itemTypes = (Array.isArray(data) ? data.map(x => x?.name ?? x?.type_name ?? x?.typeName).filter(Boolean) : [])
-                .sort((a, b) => a.localeCompare(b));
+            const response = await fetch(`${API_BASE}/api/item-types`);
+            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+            itemTypes = await response.json();
         } catch (error) {
             console.error("Could not fetch item types:", error);
-            // Keep itemTypes as [] so UI shows empty list until user adds one
+            itemTypes = [];
         }
     }
 
     async function loadDepartments() {
         try {
-            const response = await fetch(`${API_BASE}/api/departments`, { headers: { 'Accept': 'application/json' } });
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
-            const data = await response.json();
-            departments = (Array.isArray(data) ? data.map(x => x?.name ?? x?.department_name ?? x?.departmentName).filter(Boolean) : [])
-                .sort((a, b) => a.localeCompare(b));
+            const response = await fetch(`${API_BASE}/api/departments`);
+            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+            departments = await response.json();
         } catch (error) {
             console.error('Could not fetch departments:', error);
+            departments = [];
         }
     }
 
     async function loadClassifications() {
         try {
-            const response = await fetch(`${API_BASE}/api/classifications`, { headers: { 'Accept': 'application/json' } });
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
-            const data = await response.json();
-            classifications = (Array.isArray(data) ? data.map(x => x?.name ?? x?.classification_name ?? x?.classificationName).filter(Boolean) : [])
-                .sort((a, b) => a.localeCompare(b));
+            const response = await fetch(`${API_BASE}/api/classifications`);
+            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+            classifications = await response.json();
         } catch (error) {
             console.error('Could not fetch classifications:', error);
+            classifications = [];
+        }
+    }
+
+    async function loadUsers() {
+        try {
+            const response = await fetch(`${API_BASE}/api/users`);
+            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+            users = await response.json();
+        } catch (error) {
+            console.error('Could not fetch users:', error);
+            users = [];
         }
     }
 
@@ -344,10 +379,10 @@
         const classification = classFilterEl.value;
 
         const filtered = assets.filter(a => {
-            const mq = !q || [a.id, a.itemName, a.itemType, a.department, a.employee || '', a.classification || ''].some(x => String(x).toLowerCase().includes(q));
-            const mc = cat === 'all' || a.itemType === cat;
-            const md = dept === 'all' || a.department === dept;
-            const mcl = classification === 'all' || a.classification === classification;
+            const mq = !q || [a.id, a.itemName, a.itemTypeName, a.departmentName, a.employeeName || '', a.itemClassificationName || ''].some(x => String(x).toLowerCase().includes(q));
+            const mc = !cat || cat === 'all' || a.itemTypeName === cat;
+            const md = !dept || dept === 'all' || a.departmentName === dept;
+            const mcl = !classification || classification === 'all' || a.itemClassificationName === classification;
             return mq && mc && md && mcl;
         });
 
@@ -357,33 +392,32 @@
             bodyEl.innerHTML = filtered.map(a => `
             <tr class="border-b last:border-0">
               <td class="px-6 py-4 font-medium text-slate-800"><a href="#" class="text-[var(--vos-primary)] hover:underline" onclick="event.preventDefault(); openDrawer('${a.id}')">${a.itemName}</a></td>
-              <td class="px-6 py-4">${a.itemType}</td>
-              <td class="px-6 py-4">${a.classification}</td>
+              <td class="px-6 py-4">${a.itemTypeName}</td>
+              <td class="px-6 py-4">${a.itemClassificationName}</td>
             </tr>`).join('');
         }
 
         noResultsEl.style.display = filtered.length === 0 && assets.length > 0 ? 'block' : 'none';
         statTotalEl.textContent = filtered.reduce((sum, a) => sum + (a.quantity || 0), 0);
-        statTotalCostEl.textContent = peso(filtered.reduce((s, a) => s + (a.totalCost || 0), 0));
+        statTotalCostEl.textContent = peso(filtered.reduce((s, a) => s + (a.total || 0), 0));
     }
 
     function populateDynamicFilters() {
-        // Item Types
-        const allItemTypes = [...new Set([...itemTypes, ...assets.map(a => a.itemType).filter(Boolean)])].sort();
-        itemTypes = allItemTypes;
-        const typeOptions = allItemTypes.map(t => `<option value="${t}">${t}</option>`).join('');
-        catFilterEl.innerHTML = '<option value="all">All Item Types</option>' + typeOptions;
-        formEl.elements.itemType.innerHTML = '<option value="">Select...</option>' + typeOptions;
+        const typeOptions = itemTypes.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+        catFilterEl.innerHTML = '<option value="all">All Item Types</option>' + itemTypes.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+        formEl.elements.itemTypeId.innerHTML = '<option value="">Select...</option>' + typeOptions;
 
-        // Departments (use API-fetched list only)
-        const deptOptions = departments.map(d => `<option value="${d}">${d}</option>`).join('');
-        deptFilterEl.innerHTML = '<option value="all">All Departments</option>' + deptOptions;
-        formEl.elements.department.innerHTML = '<option value="">Select...</option>' + deptOptions;
+        const deptOptions = departments.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+        deptFilterEl.innerHTML = '<option value="all">All Departments</option>' + departments.map(d => `<option value="${d.name}">${d.name}</option>`).join('');
+        formEl.elements.departmentId.innerHTML = '<option value="">Select...</option>' + deptOptions;
 
-        // Classifications (use API-fetched list only)
-        const classOptions = classifications.map(c => `<option value="${c}">${c}</option>`).join('');
-        classFilterEl.innerHTML = '<option value="all">All Classifications</option>' + classOptions;
-        formEl.elements.classification.innerHTML = '<option value="">Select...</option>' + classOptions;
+        const classOptions = classifications.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        classFilterEl.innerHTML = '<option value="all">All Classifications</option>' + classifications.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+        formEl.elements.classificationId.innerHTML = '<option value="">Select...</option>' + classOptions;
+
+        const userOptions = users.map(u => `<option value="${u.userId}">${u.fullName}</option>`).join('');
+        formEl.elements.employeeId.innerHTML = '<option value="">Select Employee...</option>' + userOptions;
+        formEl.elements.encoderId.innerHTML = '<option value="">Select Encoder...</option>' + userOptions;
     }
 
     // --- EVENT HANDLERS & ACTIONS ---
@@ -392,6 +426,7 @@
         formEl.reset();
         imagePreviewEl.src = 'https://placehold.co/400x300/e2e8f0/475569?text=No+Image';
         formEl.elements.imageUrl.value = '';
+        formEl.elements.purchaseDate.valueAsDate = new Date();
         modalTitleEl.textContent = 'New Asset';
         modalEl.classList.add('open');
     };
@@ -402,150 +437,198 @@
         promptLabelEl.textContent = `${type} Name`;
         promptInputEl.value = '';
         promptErrorEl.style.display = 'none';
+        promptErrorEl.textContent = '';
+        promptSaveBtn.disabled = false;
         promptModalEl.classList.add('open');
-        promptInputEl.focus();
+        setTimeout(() => { try { promptInputEl.focus(); } catch(_){} }, 0);
     }
 
     document.getElementById('btn-new-type').onclick = () => openPrompt('Item Type');
     document.getElementById('btn-new-class').onclick = () => openPrompt('Classification');
-    document.getElementById('btn-new-dept').onclick = () => openPrompt('Department');
 
     promptCancelBtn.onclick = () => {
         if (promptSaveBtn.disabled) return;
         promptModalEl.classList.remove('open');
     };
 
-    async function saveNewItemType(name) {
-        const response = await fetch(`${API_BASE}/api/item-types`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body: JSON.stringify({ name: name })
-        });
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({ message: 'Failed to save new type.' }));
-            throw new Error(err.message || `HTTP Error: ${response.status}`);
-        }
-        return await response.json();
-    }
-
-    async function saveNewDepartment(name) {
-        const response = await fetch(`${API_BASE}/api/departments`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body: JSON.stringify({ name })
-        });
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({ message: 'Failed to save new department.' }));
-            throw new Error(err.message || `HTTP Error: ${response.status}`);
-        }
-        return await response.json();
-    }
-
-    async function saveNewClassification(name) {
-        const response = await fetch(`${API_BASE}/api/classifications`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body: JSON.stringify({ name })
-        });
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({ message: 'Failed to save new classification.' }));
-            throw new Error(err.message || `HTTP Error: ${response.status}`);
-        }
-        return await response.json();
-    }
-
     promptSaveBtn.onclick = async () => {
-        const value = promptInputEl.value.trim();
-        if (!value) {
-            promptErrorEl.textContent = 'Name cannot be empty.';
+        if (!currentPromptType) return;
+        const label = currentPromptType;
+        const name = String(promptInputEl.value || '').trim();
+        promptErrorEl.style.display = 'none';
+        promptErrorEl.textContent = '';
+        if (!name) {
+            promptErrorEl.textContent = `${label} name is required.`;
+            promptErrorEl.style.display = 'block';
+            return;
+        }
+
+        // Check duplicates locally (case-insensitive)
+        const exists = (label === 'Item Type'
+            ? itemTypes.some(t => String(t.name).toLowerCase() === name.toLowerCase())
+            : classifications.some(c => String(c.name).toLowerCase() === name.toLowerCase()));
+        if (exists) {
+            promptErrorEl.textContent = `${label} already exists.`;
             promptErrorEl.style.display = 'block';
             return;
         }
 
         promptSaveBtn.disabled = true;
-        promptSaveBtn.textContent = 'Saving...';
-        promptErrorEl.style.display = 'none';
-
         try {
-            if (currentPromptType === 'Item Type') {
-                if (itemTypes.some(item => item.toLowerCase() === value.toLowerCase())) {
-                    throw new Error('Item Type already exists.');
-                }
-                const newItem = await saveNewItemType(value);
-                itemTypes.push(newItem.name); // Assume API returns { id, name }
-                populateDynamicFilters();
-                formEl.elements.itemType.value = newItem.name;
-                promptModalEl.classList.remove('open');
-            } else if (currentPromptType === 'Department') {
-                if (departments.some(item => item.toLowerCase() === value.toLowerCase())) {
-                    throw new Error('Department already exists.');
-                }
-                const newDept = await saveNewDepartment(value);
-                await loadDepartments();
-                populateDynamicFilters();
-                formEl.elements.department.value = newDept.name || value;
-                promptModalEl.classList.remove('open');
-            } else if (currentPromptType === 'Classification') {
-                if (classifications.some(item => item.toLowerCase() === value.toLowerCase())) {
-                    throw new Error('Classification already exists.');
-                }
-                const newClass = await saveNewClassification(value);
-                await loadClassifications();
-                populateDynamicFilters();
-                formEl.elements.classification.value = newClass.name || value;
-                promptModalEl.classList.remove('open');
+            const endpoint = label === 'Item Type' ? 'item-types' : 'classifications';
+            const resp = await fetch(`${API_BASE}/api/${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({ message: 'Failed to save.' }));
+                throw new Error(err.message || 'Failed to save.');
             }
-        } catch (error) {
-            promptErrorEl.textContent = error.message;
+            const created = await resp.json(); // { id, name }
+
+            // Update local state
+            if (label === 'Item Type') {
+                itemTypes.push(created);
+            } else {
+                classifications.push(created);
+            }
+            // Re-render selects/filters
+            populateDynamicFilters();
+            // Preselect the newly created value on the form
+            if (label === 'Item Type') {
+                formEl.elements.itemTypeId.value = created.id;
+            } else {
+                formEl.elements.classificationId.value = created.id;
+            }
+
+            promptModalEl.classList.remove('open');
+            showToast(`${label} created successfully.`);
+        } catch (e) {
+            promptErrorEl.textContent = e.message || 'An error occurred while saving.';
             promptErrorEl.style.display = 'block';
         } finally {
             promptSaveBtn.disabled = false;
-            promptSaveBtn.textContent = 'Save';
         }
     };
 
-
-    formEl.onsubmit = e => {
+    formEl.onsubmit = async (e) => {
         e.preventDefault();
-        const data = Object.fromEntries(new FormData(formEl).entries());
-        data.costPerItem = +data.costPerItem;
-        data.quantity = +data.quantity;
-        data.totalCost = data.costPerItem * data.quantity;
-        data.lifeSpan = +data.lifeSpan;
+        const submitButton = formEl.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        submitButton.textContent = 'Saving...';
 
-        if (editingId) {
-            const index = assets.findIndex(x => x.id == editingId);
-            if (index >= 0) {
-                data.id = editingId;
-                assets[index] = { ...assets[index], ...data };
+        try {
+            const selectedItemType = itemTypes.find(t => t.id == formEl.elements.itemTypeId.value);
+            if (selectedItemType) formEl.elements.itemTypeName.value = selectedItemType.name;
+
+            const selectedClass = classifications.find(c => c.id == formEl.elements.classificationId.value);
+            if (selectedClass) formEl.elements.classificationName.value = selectedClass.name;
+
+            const selectedDept = departments.find(d => d.id == formEl.elements.departmentId.value);
+            if (selectedDept) formEl.elements.departmentName.value = selectedDept.name;
+
+            const selectedEmployee = users.find(u => u.userId == formEl.elements.employeeId.value);
+            if (selectedEmployee) formEl.elements.employeeName.value = selectedEmployee.fullName;
+
+            const selectedEncoder = users.find(u => u.userId == formEl.elements.encoderId.value);
+            if (selectedEncoder) formEl.elements.encoderName.value = selectedEncoder.fullName;
+
+            const formData = new FormData(formEl);
+            const data = Object.fromEntries(formData.entries());
+
+            let response;
+            if (editingId) {
+                response = await fetch(`${API_BASE}/api/items/${editingId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+            } else {
+                response = await fetch(`${API_BASE}/api/items`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
             }
-        } else {
-            data.id = generateNewAssetId();
-            assets.unshift(data);
+
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.message || 'Failed to save the asset.');
+            }
+
+            closeModal();
+            await fetchAssets();
+            showToast(`Asset ${editingId ? 'updated' : 'created'} successfully.`);
+
+        } catch (error) {
+            showToast(error.message, 'error');
+        } finally {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Save Asset';
+            editingId = null;
         }
-
-        editingId = null;
-        closeModal();
-        populateDynamicFilters();
-        render();
     };
-
-    const updateTotalCost = () => {
-        const qty = +formEl.elements.quantity.value || 0;
-        const cost = +formEl.elements.costPerItem.value || 0;
-        formEl.elements.totalCost.value = peso(qty * cost);
-    };
-    formEl.elements.quantity.oninput = updateTotalCost;
-    formEl.elements.costPerItem.oninput = updateTotalCost;
 
     imageUploaderEl.onchange = (e) => {
         const file = e.target.files[0];
         if (file) {
+            // Basic client-side guard against overly large images
+            const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
+            if (file.size > MAX_BYTES) {
+                showToast('Selected image is too large. Please choose an image under 20 MB.', 'error');
+                e.target.value = '';
+                return;
+            }
+
+            const toCompressedDataUrl = (img, mime = 'image/jpeg') => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                // Resize keeping aspect ratio, max dimension 1280px
+                const maxDim = 1280;
+                let { width, height } = img;
+                if (width > maxDim || height > maxDim) {
+                    if (width > height) {
+                        height = Math.round(height * (maxDim / width));
+                        width = maxDim;
+                    } else {
+                        width = Math.round(width * (maxDim / height));
+                        height = maxDim;
+                    }
+                }
+                canvas.width = width;
+                canvas.height = height;
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Try progressively lower quality until under target size
+                const TARGET_MAX = 800 * 1024; // ~800 KB
+                let quality = 0.8;
+                let dataUrl = canvas.toDataURL(mime, quality);
+                // Safety loop to reduce size if still too large
+                while (dataUrl.length > TARGET_MAX * 1.4 && quality > 0.4) { // dataURL is ~1.33x bytes
+                    quality -= 0.1;
+                    dataUrl = canvas.toDataURL(mime, quality);
+                }
+                return dataUrl;
+            };
+
             const reader = new FileReader();
             reader.onload = (event) => {
-                const imageUrl = event.target.result;
-                imagePreviewEl.src = imageUrl;
-                formEl.elements.imageUrl.value = imageUrl;
+                const tempImg = new Image();
+                tempImg.onload = () => {
+                    // Prefer JPEG to compress better; fall back to original type if needed
+                    const mime = 'image/jpeg';
+                    const compressed = toCompressedDataUrl(tempImg, mime);
+                    imagePreviewEl.src = compressed;
+                    formEl.elements.imageUrl.value = compressed;
+                };
+                tempImg.onerror = () => {
+                    // Fallback: use original data URL
+                    const imageUrl = event.target.result;
+                    imagePreviewEl.src = imageUrl;
+                    formEl.elements.imageUrl.value = imageUrl;
+                }
+                tempImg.src = event.target.result;
             };
             reader.readAsDataURL(file);
         }
@@ -554,31 +637,54 @@
     window.editAsset = (id) => {
         const asset = assets.find(x => x.id == id);
         if (!asset) return;
+
         editingId = id;
         closeDrawer();
-        modalTitleEl.textContent = 'Edit Asset';
         formEl.reset();
-        for (const key in asset) {
-            if (formEl.elements[key]) {
-                formEl.elements[key].value = asset[key];
-            }
+
+        formEl.elements.itemName.value = asset.itemName || '';
+        formEl.elements.itemTypeId.value = asset.itemTypeId || '';
+        formEl.elements.classificationId.value = asset.itemClassificationId || '';
+        formEl.elements.departmentId.value = asset.departmentId || '';
+        formEl.elements.totalCost.value = asset.costPerItem || '';
+        if (asset.dateAcquired) {
+            formEl.elements.purchaseDate.value = new Date(asset.dateAcquired).toISOString().split('T')[0];
         }
-        imagePreviewEl.src = asset.imageUrl || 'https://placehold.co/400x300/e2e8f0/475569?text=No+Image';
-        updateTotalCost();
+        formEl.elements.lifeSpan.value = asset.lifeSpan ? asset.lifeSpan / 12 : '';
+        const allowedConditions = ['Good','Bad','Under Maintenance','Discontinued'];
+        const currentCond = (asset.condition || '').trim();
+        formEl.elements.condition.value = allowedConditions.includes(currentCond) ? currentCond : 'Good';
+        formEl.elements.employeeId.value = asset.employeeId || '';
+        formEl.elements.encoderId.value = asset.encoderId || '';
+        formEl.elements.imageUrl.value = asset.itemImage || '';
+        imagePreviewEl.src = asset.itemImage || 'https://placehold.co/400x300/e2e8f0/475569?text=No+Image';
+
+        modalTitleEl.textContent = 'Edit Asset';
         modalEl.classList.add('open');
     }
 
-    window.removeAsset = (id) => {
+    window.removeAsset = async (id) => {
         if (confirm(`Are you sure you want to delete asset ${id}?`)) {
-            assets = assets.filter(x => x.id != id);
-            closeDrawer();
-            populateDynamicFilters();
-            render();
+            try {
+                const response = await fetch(`${API_BASE}/api/items/${id}`, {
+                    method: 'DELETE'
+                });
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({ message: 'Server responded with an error.' }));
+                    throw new Error(errData.message);
+                }
+                closeDrawer();
+                await fetchAssets();
+                showToast('Asset deleted successfully.');
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
         }
     }
 
     window.closeModal = () => {
         modalEl.classList.remove('open');
+        editingId = null;
     }
 
     window.openDrawer = (id) => {
@@ -587,22 +693,20 @@
 
         drawerBodyEl.innerHTML = `
         <div class="vos-card mb-4">
-            <img src="${a.imageUrl || 'https://placehold.co/400x300/e2e8f0/475569?text=No+Image'}" class="w-full h-48 object-cover rounded-lg mb-4">
+            <img src="${a.itemImage || 'https://placehold.co/400x300/e2e8f0/475569?text=No+Image'}" class="w-full h-48 object-cover rounded-lg mb-4">
             <div class="text-xl font-bold">${a.itemName}</div>
-            <div class="text-sm text-slate-500">${a.id}</div>
+            <div class="text-sm text-slate-500">ID: ${a.id}</div>
         </div>
         <div class="grid grid-cols-2 gap-4">
-            ${DetailCard("Item Type", a.itemType)}
-            ${DetailCard("Classification", a.classification)}
-            ${DetailCard("Department", a.department, true)}
-            ${DetailCard("Employee", a.employee, true)}
-            ${DetailCard("Purchase Date", a.purchaseDate ? new Date(a.purchaseDate).toLocaleDateString() : 'N/A')}
-            ${DetailCard("Quantity", a.quantity)}
-            ${DetailCard("Cost per Item", peso(a.costPerItem))}
-            ${DetailCard("Total Cost", `<strong class="text-[var(--vos-accent)]">${peso(a.totalCost)}</strong>`)}
-            ${DetailCard("Life Span", a.lifeSpan ? `${a.lifeSpan} years` : 'N/A')}
+            ${DetailCard("Item Type", a.itemTypeName)}
+            ${DetailCard("Classification", a.itemClassificationName)}
+            ${DetailCard("Department", a.departmentName, true)}
+            ${DetailCard("Employee", a.employeeName, true)}
+            ${DetailCard("Purchase Date", a.dateAcquired ? new Date(a.dateAcquired).toLocaleDateString() : 'N/A')}
+            ${DetailCard("Cost", `<strong class="text-[var(--vos-accent)]">${peso(a.total)}</strong>`)}
+            ${DetailCard("Life Span", a.lifeSpan ? `${a.lifeSpan / 12} years` : 'N/A')}
             ${DetailCard("Condition", a.condition)}
-            ${DetailCard("Encoder", a.encoder, true)}
+            ${DetailCard("Encoder ID", a.encoderId, true)}
         </div>
         <div class="mt-6 flex gap-2">
             <button class='vos-btn-primary text-white font-semibold py-2 px-4 rounded-lg w-full' onclick="editAsset('${a.id}')">Edit</button>
@@ -618,18 +722,18 @@
     }
 
     // --- INITIALIZATION ---
-    searchEl.oninput = render;
-    catFilterEl.onchange = render;
-    deptFilterEl.onchange = render;
-    classFilterEl.onchange = render;
-
     document.querySelectorAll('.label').forEach(el => el.classList.add('block', 'text-sm', 'font-medium', 'text-slate-700', 'mb-1'));
     document.querySelectorAll('.input').forEach(el => el.classList.add('w-full', 'px-3', 'py-2', 'text-slate-900', 'border', 'rounded-md'));
 
     document.addEventListener('DOMContentLoaded', async () => {
-        await Promise.all([loadItemTypes(), loadDepartments(), loadClassifications(), fetchAssets()]);
+        await Promise.all([
+            loadItemTypes(),
+            loadDepartments(),
+            loadClassifications(),
+            loadUsers(),
+            fetchAssets()
+        ]);
         populateDynamicFilters();
-        render();
     });
 </script>
 </body>

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Login — VERTEX ER</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="vos.css" />
+</head>
+<body class="bg-slate-100 min-h-screen flex items-center justify-center">
+<div class="w-full max-w-md bg-white rounded-xl shadow p-8">
+    <h1 class="text-2xl font-semibold mb-6 text-center">Sign in</h1>
+    <form id="loginForm" class="space-y-4">
+        <div>
+            <label class="block text-sm mb-1" for="email">Email</label>
+            <input id="email" type="email" class="w-full border rounded-lg px-3 py-2" required />
+        </div>
+        <div>
+            <label class="block text-sm mb-1" for="password">Password</label>
+            <input id="password" type="password" class="w-full border rounded-lg px-3 py-2" required />
+        </div>
+        <button type="submit" class="w-full py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Login</button>
+    </form>
+    <p id="loginMsg" class="mt-4 text-sm text-red-600"></p>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
