@@ -139,6 +139,7 @@
                 <th class="px-6 py-3">Item Name</th>
                 <th class="px-6 py-3">Item Type</th>
                 <th class="px-6 py-3">Item Classification</th>
+                <th class="px-6 py-3">Department</th>
             </tr>
             </thead>
             <tbody id="asset-body">
@@ -207,6 +208,7 @@
                     </div>
                     <input type="file" name="image" id="image-uploader" class="input mt-2" accept="image/*">
                     <input type="hidden" name="imageUrl">
+                    <input type="hidden" name="imageData" id="image-data">
                 </div>
             </div>
             <div class="mt-6 flex justify-end gap-3">
@@ -313,9 +315,9 @@
     const API_BASE = window.ASSET_API_BASE || (location.port === '3001' ? '' : 'http://localhost:3001');
 
     async function fetchAssets() {
-        bodyEl.innerHTML = `<tr><td colspan="3" class="text-center py-12">Loading assets...</td></tr>`;
+        bodyEl.innerHTML = `<tr><td colspan="4" class="text-center py-12">Loading assets...</td></tr>`;
         try {
-            const response = await fetch(`${API_BASE}/api/items`);
+            const response = await fetch(`${API_BASE}/api/assets`);
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }
@@ -323,7 +325,7 @@
             render();
         } catch (error) {
             console.error("Could not fetch assets:", error);
-            bodyEl.innerHTML = `<tr><td colspan="3" class="text-center py-12 text-red-600">Failed to load assets. ${error.message}</td></tr>`;
+            bodyEl.innerHTML = `<tr><td colspan="4" class="text-center py-12 text-red-600">Failed to load assets. ${error.message}</td></tr>`;
         }
     }
 
@@ -394,6 +396,7 @@
               <td class="px-6 py-4 font-medium text-slate-800"><a href="#" class="text-[var(--vos-primary)] hover:underline" onclick="event.preventDefault(); openDrawer('${a.id}')">${a.itemName}</a></td>
               <td class="px-6 py-4">${a.itemTypeName}</td>
               <td class="px-6 py-4">${a.itemClassificationName}</td>
+              <td class="px-6 py-4">${a.departmentName || '—'}</td>
             </tr>`).join('');
         }
 
@@ -537,6 +540,19 @@
             const formData = new FormData(formEl);
             const data = Object.fromEntries(formData.entries());
 
+// === normalize required FKs to integers and add snake_case copies ===
+            data.itemTypeId       = (data.itemTypeId === '' ? null : parseInt(data.itemTypeId, 10));
+            data.classificationId = (data.classificationId === '' ? null : parseInt(data.classificationId, 10));
+            data.departmentId     = (data.departmentId === '' ? null : parseInt(data.departmentId, 10));
+            data.employeeId       = (data.employeeId === '' ? null : parseInt(data.employeeId, 10));
+            data.encoderId        = (data.encoderId === '' ? null : parseInt(data.encoderId, 10));
+            if (data.lifeSpan !== undefined) data.lifeSpan = (data.lifeSpan === '' ? null : parseInt(data.lifeSpan, 10));
+            if (data.quantity !== undefined) data.quantity = (data.quantity === '' ? 1 : parseInt(data.quantity, 10));
+            if (data.cost !== undefined) data.cost = (data.cost === '' ? null : parseFloat(data.cost));
+            if (data.totalCost !== undefined) data.totalCost = (data.totalCost === '' ? null : parseFloat(data.totalCost));
+            data.item_type = data.itemTypeId ?? null;
+            data.item_classification = data.classificationId ?? null;
+// === end normalization ===
             let response;
             if (editingId) {
                 response = await fetch(`${API_BASE}/api/items/${editingId}`, {
@@ -620,6 +636,8 @@
                     const mime = 'image/jpeg';
                     const compressed = toCompressedDataUrl(tempImg, mime);
                     imagePreviewEl.src = compressed;
+                    const imageDataInput = document.getElementById('image-data');
+                    if (imageDataInput) imageDataInput.value = compressed;
                     formEl.elements.imageUrl.value = compressed;
                 };
                 tempImg.onerror = () => {
