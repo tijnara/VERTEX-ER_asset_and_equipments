@@ -144,3 +144,148 @@
         }
     });
 })();
+
+// --- New Asset Modal: image upload + save integration ---
+(() => {
+  // --- SETTINGS: update selectors to match your New Asset modal ---
+  const MODAL_SEL        = '#new-asset-modal';          // container of the New Asset window
+  const FILE_INPUT_SEL   = '#asset-image';              // your existing <input type="file">
+  const SAVE_BUTTON_SEL  = '#save-asset-btn';           // your existing "Save" button
+  const PREVIEW_IMG_SEL  = '#asset-image-preview';      // optional <img> inside the modal
+  const SPINNER_SEL      = '#asset-image-spinner';      // optional spinner element
+
+  // in-memory state for the New Asset being edited
+  const state = { imageUrl: null };
+
+  function $(sel, root = document) { return root.querySelector(sel); }
+
+  function apiBase() {
+    // If the page is served by the same Express (port 3001), return empty.
+    // Otherwise, hardcode your host (e.g. 'http://192.168.0.65:3001')
+    return '';
+  }
+
+  async function uploadImage(file) {
+    const fd = new FormData();
+    fd.append('file', file); // server expects field name "file"
+
+    const res = await fetch(`${apiBase()}/api/assets/images/upload`, {
+      method: 'POST',
+      body: fd
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success || !data.url) {
+      throw new Error(data.message || 'Image upload failed');
+    }
+    return data.url;
+  }
+
+  function setBusy(isBusy) {
+    const btn = $(SAVE_BUTTON_SEL);
+    const spin = $(SPINNER_SEL);
+    if (btn) btn.disabled = isBusy;
+    if (spin) spin.style.display = isBusy ? 'inline-block' : 'none';
+  }
+
+  async function onFileChosen(fileInput) {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+
+    try {
+      setBusy(true);
+      // (Optional) quick client validation
+      if (!/^image\//.test(file.type)) throw new Error('Please select an image file.');
+      if (file.size > 20 * 1024 * 1024) throw new Error('Image must be under 20 MB.');
+
+      const url = await uploadImage(file);
+      state.imageUrl = url;
+
+      // optional image preview
+      const img = $(PREVIEW_IMG_SEL);
+      if (img) {
+        img.src = url;
+        img.classList.remove('hidden');
+      }
+    } catch (err) {
+      console.error('Image upload error:', err);
+      alert(err.message || 'Image upload failed.');
+      state.imageUrl = null;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Integrate the URL into your existing Save flow:
+  // - If you already have a submit handler, just include state.imageUrl in its payload.
+  // - If not, here’s a wrapper example that augments your existing save handler.
+  function augmentSavePayload(payload) {
+    // your payload likely already has asset_name, asset_code, etc.
+    // just inject the auto-generated image URL:
+    return {
+      ...payload,
+      image_url: state.imageUrl || payload.image_url || null,
+    };
+  }
+
+  // --- WIRING ---
+  document.addEventListener('DOMContentLoaded', () => {
+    const modal = $(MODAL_SEL);
+    if (!modal) return; // New Asset modal not on this page
+
+    const fileInput = $(FILE_INPUT_SEL, modal);
+    if (fileInput) {
+      fileInput.addEventListener('change', () => onFileChosen(fileInput));
+    }
+
+    // If you already have a save handler, keep it.
+    // Example: wrap an existing click handler to inject image_url.
+    const saveBtn = $(SAVE_BUTTON_SEL, modal);
+    if (saveBtn && !saveBtn.dataset.enhanced) {
+      saveBtn.dataset.enhanced = '1';
+
+      // Example: intercept and forward to your existing save function
+      const originalOnClick = saveBtn.onclick;
+      saveBtn.onclick = async (e) => {
+        // Build your existing payload (replace these with your actual field selectors)
+        const payload = {
+          asset_name:  $('#asset-name', modal)?.value?.trim() || '',
+          asset_code:  $('#asset-code', modal)?.value?.trim() || '',
+          category_id: parseInt($('#asset-category', modal)?.value || '0', 10) || null,
+          // ... any other fields ...
+        };
+
+        const finalPayload = augmentSavePayload(payload);
+
+        // If you already send the request elsewhere, call that here with finalPayload.
+        // Otherwise, here’s a direct example POST to /api/assets:
+        try {
+          setBusy(true);
+          const res = await fetch(`${apiBase()}/api/assets`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(finalPayload),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || data.success === false) {
+            throw new Error(data.message || 'Save failed');
+          }
+          alert('Asset saved successfully.');
+          // clear state for the next asset
+          state.imageUrl = null;
+          // if you maintain a list/table, refresh it here
+        } catch (err) {
+          console.error('Save asset error:', err);
+          alert(err.message || 'Save failed.');
+        } finally {
+          setBusy(false);
+        }
+
+        // If you originally had an onclick, call it last (or remove this)
+        if (typeof originalOnClick === 'function') {
+          try { originalOnClick.call(saveBtn, e); } catch {}
+        }
+      };
+    }
+  });
+})();

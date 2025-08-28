@@ -82,9 +82,13 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 // Upload endpoint: expects field name "image"
 app.post('/api/upload-local', uploadLocal.single('image'), (req, res) => {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+
+    // ✨ UPDATED: Hardcoded the URL to use your PC's IP address
     const fileUrl = `http://192.168.0.65:${PORT}/uploads/${req.file.filename}`;
+
     return res.json({ message: 'Uploaded successfully', url: fileUrl, filename: req.file.filename });
 });
+
 
 // ---- External API addresses ----
 const EXTERNAL_API_BASE = process.env.EXTERNAL_API_BASE || 'http://192.168.1.49:8080/api';
@@ -176,6 +180,7 @@ function createAssetPayload(body, itemId) {
 
     const employeeId  = toInt(body.employeeId ?? body.employee, null);
     const encoderId   = toInt(body.encoderId  ?? body.encoder,  null);
+
     const imageText   = body.imageUrl ?? body.imageData ?? body.item_image ?? null;
 
     return {
@@ -275,13 +280,13 @@ async function dbGetItems() {
 }
 async function dbUpsertItem(id, itemName, itemTypeId, classificationId) {
     const sql = `
-    INSERT INTO items (id, item_name, item_type, item_classification)
-    VALUES (?, ?, ?, ?)
-    ON DUPLICATE KEY UPDATE
-      item_name = VALUES(item_name),
-      item_type = VALUES(item_type),
-      item_classification = VALUES(item_classification)
-  `;
+        INSERT INTO items (id, item_name, item_type, item_classification)
+        VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                                 item_name = VALUES(item_name),
+                                 item_type = VALUES(item_type),
+                                 item_classification = VALUES(item_classification)
+    `;
     await pool.query(sql, [id, itemName, itemTypeId, classificationId]);
 }
 async function dbUpdateItem(id, itemName, itemTypeId, classificationId) {

@@ -182,11 +182,8 @@
                     <div class="w-full h-64 border-2 border-dashed rounded-lg flex items-center justify-center bg-slate-50">
                         <img id="image-preview" src="https://placehold.co/400x300/e2e8f0/475569?text=No+Image" class="max-h-full max-w-full object-contain rounded">
                     </div>
-                    <!-- Keep file input for client-side compression/preview ONLY.
-                         IMPORTANT: We REMOVE this field from FormData before submit to satisfy multer.none(). -->
-                    <input type="file" name="image" id="image-uploader" class="input mt-2" accept="image/*">
+                    <input type="file" id="image-uploader" class="input mt-2" accept="image/*">
                     <input type="hidden" name="imageUrl">
-                    <input type="hidden" name="imageData" id="image-data">
                 </div>
             </div>
             <div class="mt-6 flex justify-end gap-3">
@@ -234,7 +231,7 @@
         const toast = document.createElement('div');
         toast.className = 'toast p-4 rounded-lg shadow-lg text-white font-semibold';
         toast.textContent = message;
-        toast.classList.add(type === 'error' ? 'bg-red-500' : 'bg-green-500');
+        toast.classList.add(type === 'error' ? 'bg-red-500' : 'bg-red-500');
         container.appendChild(toast);
         setTimeout(() => { toast.classList.add('show'); }, 10);
         setTimeout(() => {
@@ -427,6 +424,7 @@
         formEl.reset();
         imagePreviewEl.src = 'https://placehold.co/400x300/e2e8f0/475569?text=No+Image';
         formEl.elements.imageUrl.value = '';
+        imageUploaderEl.value = ''; // Clear file input
         setDateInputSafe(formEl.elements.purchaseDate, new Date());
         modalTitleEl.textContent = 'New Asset';
 
@@ -543,9 +541,6 @@
 
             const formData = new FormData(formEl);
 
-            // IMPORTANT: Remove file field so multer.none() doesn't throw "Unexpected field"
-            if (formData.has('image')) formData.delete('image');
-
             // Ensure encoderId is included if the select is disabled
             const encSelect = formEl.elements.encoderId;
             if (encSelect && encSelect.disabled && !formData.has('encoderId')) {
@@ -555,7 +550,14 @@
             const url = editingId ? `${API_BASE}/api/items/${editingId}` : `${API_BASE}/api/items`;
             const method = editingId ? 'PUT' : 'POST';
 
-            const response = await fetch(url, { method, body: formData });
+            // The body is now created from FormData, which includes the `imageUrl` field.
+            const response = await fetch(url, {
+                method,
+                // Since we are sending FormData, we do not set Content-Type header manually.
+                // The browser will set it to `multipart/form-data` which the backend's `upload.none()` can parse.
+                body: formData
+            });
+
             if (!response.ok) {
                 const err = await response.json().catch(() => ({ message: 'Failed to save the asset.' }));
                 throw new Error(err.message);
@@ -573,57 +575,54 @@
         }
     };
 
-    imageUploaderEl.onchange = (e) => {
+    // ✨ --- REWRITTEN IMAGE UPLOAD LOGIC --- ✨
+    imageUploaderEl.onchange = async (e) => {
         const file = e.target.files[0];
-        if (file) {
-            const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
-            if (file.size > MAX_BYTES) {
-                showToast('Selected image is too large. Please choose an image under 20 MB.', 'error');
-                e.target.value = '';
-                return;
+        if (!file) return;
+
+        // 1. Validate file size
+        const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
+        if (file.size > MAX_BYTES) {
+            showToast('Image is too large. Max size is 20 MB.', 'error');
+            e.target.value = ''; // Reset file input
+            return;
+        }
+
+        // 2. Prepare form data for upload
+        const uploadFormData = new FormData();
+        uploadFormData.append('image', file); // 'image' must match the field name in server.js multer config
+
+        // 3. Show a loading state
+        imagePreviewEl.src = 'https://placehold.co/200x150/e2e8f0/475569?text=Uploading...';
+        imageUploaderEl.disabled = true;
+
+        try {
+            // 4. Send the file to the dedicated upload endpoint
+            const response = await fetch(`${API_BASE}/api/upload-local`, {
+                method: 'POST',
+                body: uploadFormData,
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || 'Upload failed.');
             }
 
-            const toCompressedDataUrl = (img, mime = 'image/jpeg') => {
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                const maxDim = 1280;
-                let { width, height } = img;
-                if (width > maxDim || height > maxDim) {
-                    if (width > height) { height = Math.round(height * (maxDim / width)); width = maxDim; }
-                    else { width = Math.round(width * (maxDim / height)); height = maxDim; }
-                }
-                canvas.width = width; canvas.height = height;
-                ctx.drawImage(img, 0, 0, width, height);
+            // 5. On success, update the preview and the hidden form field
+            showToast('Image uploaded successfully!');
+            imagePreviewEl.src = result.url;
+            formEl.elements.imageUrl.value = result.url; // IMPORTANT: This sets the URL to be submitted with the main form
 
-                const TARGET_MAX = 800 * 1024; // ~800 KB
-                let quality = 0.8;
-                let dataUrl = canvas.toDataURL(mime, quality);
-                while (dataUrl.length > TARGET_MAX * 1.4 && quality > 0.4) {
-                    quality -= 0.1;
-                    dataUrl = canvas.toDataURL(mime, quality);
-                }
-                return dataUrl;
-            };
-
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const tempImg = new Image();
-                tempImg.onload = () => {
-                    const mime = 'image/jpeg';
-                    const compressed = toCompressedDataUrl(tempImg, mime);
-                    imagePreviewEl.src = compressed;
-                    const imageDataInput = document.getElementById('image-data');
-                    if (imageDataInput) imageDataInput.value = compressed;
-                    formEl.elements.imageUrl.value = compressed;
-                };
-                tempImg.onerror = () => {
-                    const imageUrl = event.target.result;
-                    imagePreviewEl.src = imageUrl;
-                    formEl.elements.imageUrl.value = imageUrl;
-                }
-                tempImg.src = event.target.result;
-            };
-            reader.readAsDataURL(file);
+        } catch (error) {
+            showToast(error.message, 'error');
+            // Reset to default image on failure
+            imagePreviewEl.src = 'https://placehold.co/400x300/e2e8f0/475569?text=No+Image';
+            formEl.elements.imageUrl.value = '';
+            e.target.value = '';
+        } finally {
+            // 6. Re-enable the input
+            imageUploaderEl.disabled = false;
         }
     };
 
@@ -634,6 +633,7 @@
         editingId = id;
         closeDrawer();
         formEl.reset();
+        imageUploaderEl.value = ''; // Clear file input
 
         formEl.elements.itemName.value = asset.itemName || '';
         formEl.elements.itemTypeId.value = asset.itemTypeId || '';
