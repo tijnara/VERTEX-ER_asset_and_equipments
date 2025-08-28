@@ -3,15 +3,20 @@ require('dotenv').config();
 
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const axios = require('axios');
 axios.defaults.maxBodyLength = Infinity;
 axios.defaults.maxContentLength = Infinity;
 const cors = require('cors');
+const multer = require('multer');
+const upload = multer({ limits: { fieldSize: 5 * 1024 * 1024, fields: 100 } }); // used for .none() on JSON forms
 const pool = require('./db'); // mysql2/promise pool
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const DEBUG = process.env.DEBUG_PAYLOADS === '1';
+const HOST = '0.0.0.0';
 
 // ---- CORS ----
 const allowedOrigins = [
@@ -25,11 +30,11 @@ const allowedOrigins = [
         .map(s => s.trim())
         .filter(Boolean)),
 ];
+app.use(cors({ origin: allowedOrigins }));
 
 // ---- Body parsers ----
 app.use(express.json({ limit: '35mb' }));
 app.use(express.urlencoded({ extended: true, limit: '35mb' }));
-app.use(cors({ origin: allowedOrigins }));
 
 // Optional request body logger
 if (DEBUG) {
@@ -48,6 +53,38 @@ app.use(express.static(path.join(__dirname, '../frontend')));
 app.get('/', (_req, res) =>
     res.sendFile(path.join(__dirname, '../frontend/index.html'))
 );
+
+// ---------------- Local Uploads (disk) ----------------
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+    filename: (_req, file, cb) => {
+        const ext = path.extname(file.originalname || '');
+        const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+        cb(null, unique);
+    },
+});
+const uploadLocal = multer({
+    storage,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
+    fileFilter: (_req, file, cb) => {
+        const ok = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml', 'image/avif']);
+        if (!ok.has(file.mimetype)) return cb(new Error('Only image files are allowed.'));
+        cb(null, true);
+    },
+});
+
+// Serve uploaded files statically (so <img src> works in browser)
+app.use('/uploads', express.static(UPLOAD_DIR));
+
+// Upload endpoint: expects field name "image"
+app.post('/api/upload-local', uploadLocal.single('image'), (req, res) => {
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+    const fileUrl = `http://192.168.0.65:${PORT}/uploads/${req.file.filename}`;
+    return res.json({ message: 'Uploaded successfully', url: fileUrl, filename: req.file.filename });
+});
 
 // ---- External API addresses ----
 const EXTERNAL_API_BASE = process.env.EXTERNAL_API_BASE || 'http://192.168.1.49:8080/api';
@@ -170,7 +207,7 @@ function createAssetPayload(body, itemId) {
         departmentId: toInt(body.departmentId ?? body.department, null),
         itemName: body.itemName || null,
 
-        // optional names (may be null depending on your API/DB design)
+        // optional display fields
         itemTypeName: body.itemTypeName || null,
         item_type_name: body.itemTypeName || null,
         itemClassificationName: body.classificationName || null,
@@ -237,7 +274,6 @@ async function dbGetItems() {
     }));
 }
 async function dbUpsertItem(id, itemName, itemTypeId, classificationId) {
-    // Use external ID as primary key to keep things in sync
     const sql = `
     INSERT INTO items (id, item_name, item_type, item_classification)
     VALUES (?, ?, ?, ?)
@@ -291,7 +327,7 @@ app.get('/api/items', async (req, res) => {
 });
 
 // CREATE item + asset (write-through: API -> DB -> Asset API)
-app.post('/api/items', async (req, res) => {
+app.post('/api/items', upload.none(), async (req, res) => {
     try {
         const itemName = (req.body.itemName ?? req.body.item_name ?? req.body.name ?? '').trim();
 
@@ -371,7 +407,7 @@ app.post('/api/items', async (req, res) => {
 });
 
 // UPDATE item + asset (write-through: API -> DB -> Asset API)
-app.put('/api/items/:id', async (req, res) => {
+app.put('/api/items/:id', upload.none(), async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -470,7 +506,6 @@ app.delete('/api/items/:id', async (req, res) => {
 // ======================================================
 //               ASSETS & Reference Data (proxy)
 // ======================================================
-
 app.get('/api/assets', async (_req, res) => {
     try {
         const { data } = await axios.get(ASSET_API_URL, { timeout: 15000 });
@@ -631,18 +666,154 @@ app.post('/api/departments', async (req, res) => {
 });
 
 // ---- Global error handler ----
-app.use((err, req, res, next) => {
+app.use((err, _req, res, next) => {
     const status = err.status || err.statusCode;
     if (err.type === 'entity.too.large' || status === 413) {
         return res.status(413).json({
             message: 'Uploaded image is too large. Please use an image under 20 MB.'
         });
     }
+    if (/Only image files are allowed/.test(err?.message || '')) {
+        return res.status(400).json({ message: 'Only image files are allowed.' });
+    }
     next(err);
 });
 
+// ==============================
+//   S3 Pre-signed URL endpoint (kept for compatibility)
+// ==============================
+function yyyymmdd(date) {
+    return date.toISOString().slice(0, 10).replace(/-/g, '');
+}
+function hmac(key, data, encoding) {
+    return crypto.createHmac('sha256', key).update(data, 'utf8').digest(encoding);
+}
+function getS3Endpoint(bucket, region) {
+    const host = region ? `${bucket}.s3.${region}.amazonaws.com` : `${bucket}.s3.amazonaws.com`;
+    return { host, baseUrl: `https://${host}` };
+}
+function getFileExtensionFromContentType(ct) {
+    if (!ct) return '';
+    const map = {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+        'image/webp': '.webp',
+        'image/gif': '.gif',
+        'image/svg+xml': '.svg',
+        'image/avif': '.avif',
+    };
+    return map[ct] || '';
+}
+function makeSafeKeySegment(name) {
+    return String(name || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]/g, '-')
+        .replace(/-+/g, '-')
+        .slice(0, 40);
+}
+function generateUniqueKey(filename, contentType) {
+    const extFromCT = getFileExtensionFromContentType(contentType);
+    const origExt = (filename && path.extname(filename)) || '';
+    const ext = (extFromCT || origExt || '.bin');
+    const rand = crypto.randomBytes(12).toString('hex');
+    const ts = Date.now().toString(36);
+    const safe = makeSafeKeySegment((filename || '').replace(/\.[^.]*$/, ''));
+    return `uploads/${ts}-${rand}${safe ? '-' + safe : ''}${ext}`;
+}
+function presignS3PutUrl({ region, bucket, key, accessKeyId, secretAccessKey, contentType, expiresIn = 900 }) {
+    const now = new Date();
+    const amzDate = now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+    const dateStamp = yyyymmdd(now);
+    const { host, baseUrl } = getS3Endpoint(bucket, region);
+    const method = 'PUT';
+    const canonicalUri = '/' + key.split('/').map(encodeURIComponent).join('/');
+    const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
+    const algorithm = 'AWS4-HMAC-SHA256';
+
+    const params = new URLSearchParams();
+    params.set('X-Amz-Algorithm', algorithm);
+    params.set('X-Amz-Credential', `${accessKeyId}/${credentialScope}`);
+    params.set('X-Amz-Date', amzDate);
+    params.set('X-Amz-Expires', String(Math.min(Math.max(1, expiresIn), 3600)));
+    params.set('X-Amz-SignedHeaders', 'content-type;host');
+    params.set('X-Amz-Content-Sha256', 'UNSIGNED-PAYLOAD');
+
+    const canonicalQuery = params.toString();
+    const canonicalHeaders = `content-type:${contentType}\nhost:${host}\n`;
+    const signedHeaders = 'content-type;host';
+    const payloadHash = 'UNSIGNED-PAYLOAD';
+
+    const canonicalRequest = [
+        method,
+        canonicalUri,
+        canonicalQuery,
+        canonicalHeaders,
+        signedHeaders,
+        payloadHash,
+    ].join('\n');
+
+    const canonicalRequestHash = crypto.createHash('sha256').update(canonicalRequest, 'utf8').digest('hex');
+    const stringToSign = [
+        algorithm,
+        amzDate,
+        credentialScope,
+        canonicalRequestHash,
+    ].join('\n');
+
+    const kDate = hmac('AWS4' + secretAccessKey, dateStamp);
+    const kRegion = hmac(kDate, region);
+    const kService = hmac(kRegion, 's3');
+    const kSigning = hmac(kService, 'aws4_request');
+    const signature = hmac(kSigning, stringToSign, 'hex');
+
+    const presignedUrl = `${baseUrl}${canonicalUri}?${canonicalQuery}&X-Amz-Signature=${signature}`;
+    return presignedUrl;
+}
+
+app.post('/api/upload-url', (req, res) => {
+    try {
+        const { S3_BUCKET, AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_PUBLIC_BASE_URL } = process.env;
+        if (!S3_BUCKET || !AWS_REGION || !AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY) {
+            return res.status(500).json({ message: 'S3 is not configured on the server.' });
+        }
+
+        const contentType = String(req.body?.contentType || '').toLowerCase();
+        const size = Number(req.body?.size || 0);
+        const filename = String(req.body?.filename || '').trim();
+
+        const allowed = new Set(['image/jpeg','image/png','image/webp','image/gif','image/svg+xml','image/avif']);
+        if (!allowed.has(contentType)) {
+            return res.status(400).json({ message: 'Only image files are allowed.' });
+        }
+        const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
+        if (!Number.isFinite(size) || size <= 0 || size > MAX_BYTES) {
+            return res.status(400).json({ message: 'File size exceeds limit (20 MB).' });
+        }
+
+        const key = generateUniqueKey(filename, contentType);
+        const expiresIn = 900; // 15 minutes
+        const uploadUrl = presignS3PutUrl({
+            region: AWS_REGION,
+            bucket: S3_BUCKET,
+            key,
+            accessKeyId: AWS_ACCESS_KEY_ID,
+            secretAccessKey: AWS_SECRET_ACCESS_KEY,
+            contentType,
+            expiresIn,
+        });
+
+        const fileUrl = (S3_PUBLIC_BASE_URL
+            ? `${S3_PUBLIC_BASE_URL.replace(/\/$/, '')}/${key}`
+            : `${getS3Endpoint(S3_BUCKET, AWS_REGION).baseUrl}/${key}`);
+
+        return res.json({ uploadUrl, fileUrl, key, expiresIn });
+    } catch (err) {
+        console.error('POST /api/upload-url error:', err?.message || err);
+        return res.status(500).json({ message: 'Failed to generate upload URL.' });
+    }
+});
+
 // ---- Start server ----
-const HOST = '0.0.0.0';
 app.listen(PORT, HOST, () => {
     console.log(`API + static files at http://localhost:${PORT} (open http://192.168.0.65:${PORT})`);
 });
