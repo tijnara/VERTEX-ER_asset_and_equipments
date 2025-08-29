@@ -135,15 +135,18 @@
         <form id="asset-form" class="p-4 max-h-[80vh] overflow-y-auto">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
+                    <div class="sm:col-span-2">
                         <label class="label">Item Name</label>
                         <div class="flex items-center gap-2">
                             <select name="itemId" required class="input"></select>
                             <button type="button" id="btn-new-item" class="vos-btn-secondary p-2 rounded-full" title="Add New Item">
-                                <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
+                                <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16">
+                                    <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+                                </svg>
                             </button>
                         </div>
                     </div>
+
                     <div>
                         <label class="label">Item Type</label>
                         <div class="flex items-center gap-2">

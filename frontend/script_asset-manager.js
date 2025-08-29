@@ -49,6 +49,9 @@ let assets = [];
 let users = [];
 let editingId = null;
 
+// Track entities created during "New Asset" session so we can delete on cancel
+let tempCreated = { items: [], types: [], classes: [] };
+
 // --- DOM ELEMENTS ---
 const bodyEl = document.getElementById('asset-body');
 const statTotalEl = document.getElementById('stat-total');
@@ -158,7 +161,7 @@ function render() {
       <tr class="border-b last:border-0">
         <td class="px-6 py-4 font-medium text-slate-800">
           <a href="#" class="text-[var(--vos-primary)] hover:underline"
-             onclick="event.preventDefault(); openDrawer('${a.id}')">${nvl(a.itemName, '—')}</a>
+             onclick="event.preventDefault(); openDrawer('${a.id || a.itemId}')">${nvl(a.itemName, '—')}</a>
         </td>
         <td class="px-6 py-4">${nvl(a.itemTypeName, '—')}</td>
         <td class="px-6 py-4">${nvl(a.itemClassificationName, '—')}</td>
@@ -212,6 +215,9 @@ document.getElementById('btn-new').onclick = () => {
     imageUploaderEl.value = ''; // Clear file input
     setDateInputSafe(formEl.elements.purchaseDate, new Date());
     modalTitleEl.textContent = 'New Asset';
+
+    // reset tempCreated when starting a new session
+    tempCreated = { items: [], types: [], classes: [] };
 
     // Auto-fill Encoder with current logged-in user and disable
     const currentUser = getLoggedInUser();
@@ -274,13 +280,16 @@ promptSaveBtn.onclick = async () => {
         if (label === 'Item') {
             const itemTypeId = formEl.elements.itemTypeId.value;
             const classificationId = formEl.elements.classificationId.value;
-            if (!itemTypeId || !classificationId) {
-                throw new Error('Please select an Item Type and Classification before adding a new item.');
-            }
+
             endpoint = 'items/base';
-            body = { itemName: name, itemTypeId, classificationId };
+            // Only send what’s provided — both are OPTIONAL now
+            body = { itemName: name };
+            if (itemTypeId)       body.itemTypeId = itemTypeId;
+            if (classificationId) body.classificationId = classificationId;
+
             existingList = items;
-        } else if (label === 'Item Type') {
+        }
+ else if (label === 'Item Type') {
             endpoint = 'item-types';
             body = { name };
             existingList = itemTypes;
@@ -290,9 +299,13 @@ promptSaveBtn.onclick = async () => {
             existingList = classifications;
         }
 
-        if (existingList.some(i => String(i.name || i.itemName).toLowerCase() === name.toLowerCase())) {
-            throw new Error(`${label} already exists.`);
+// Allow duplicate Item names (backend will dedup if necessary)
+        if (label !== 'Item') {
+            if (existingList.some(i => String(i.name || i.itemName).toLowerCase() === name.toLowerCase())) {
+                throw new Error(`${label} already exists.`);
+            }
         }
+
 
         const resp = await fetch(`${API_BASE}/api/${endpoint}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
@@ -306,15 +319,18 @@ promptSaveBtn.onclick = async () => {
         if (label === 'Item') {
             items.push(created);
             items.sort((a, b) => a.itemName.localeCompare(b.itemName));
+            tempCreated.items.push(created.id); // track new item
             populateDynamicFilters();
             formEl.elements.itemId.value = created.id;
             formEl.elements.itemId.dispatchEvent(new Event('change')); // Trigger change to auto-fill
         } else if (label === 'Item Type') {
             itemTypes.push(created);
+            tempCreated.types.push(created.id); // track new type
             populateDynamicFilters();
             formEl.elements.itemTypeId.value = created.id;
         } else { // Classification
             classifications.push(created);
+            tempCreated.classes.push(created.id); // track new classification
             populateDynamicFilters();
             formEl.elements.classificationId.value = created.id;
         }
@@ -334,13 +350,14 @@ formEl.elements.itemId.addEventListener('change', (e) => {
     const selectedId = e.target.value;
     const selectedItem = items.find(i => i.id == selectedId);
     if (selectedItem) {
-        formEl.elements.itemTypeId.value = selectedItem.itemTypeId;
-        formEl.elements.classificationId.value = selectedItem.itemClassificationId;
-        formEl.elements.itemName.value = selectedItem.itemName; // Populate hidden field
+        formEl.elements.itemTypeId.value = selectedItem.itemTypeId ?? '';
+        formEl.elements.classificationId.value = selectedItem.itemClassificationId ?? '';
+        formEl.elements.itemName.value = selectedItem.itemName;
     } else {
         formEl.elements.itemName.value = '';
     }
 });
+
 
 formEl.onsubmit = async (e) => {
     e.preventDefault();
@@ -378,8 +395,13 @@ formEl.onsubmit = async (e) => {
             throw new Error(err.message);
         }
 
-        closeModal();
+        // Close WITHOUT cleanup (we want the new item/type/class to persist)
+        await closeModal({ cleanup: false });
         await Promise.all([fetchAssets(), loadItems()]); // Reload items in case one was edited
+
+        // Since asset was saved, discard temp list (we keep those entities)
+        tempCreated = { items: [], types: [], classes: [] };
+
         showToast(`Asset ${editingId ? 'updated' : 'created'} successfully.`);
     } catch (error) {
         showToast(error.message, 'error');
@@ -470,7 +492,40 @@ window.removeAsset = async (id) => {
     }
 };
 
-window.closeModal = () => { modalEl.classList.remove('open'); editingId = null; };
+// Close modal. If cleanup=true (default), delete any temp-created records.
+window.closeModal = async (opts = {}) => {
+    const cleanup = opts.cleanup !== false; // default true for cancel/X button
+    modalEl.classList.remove('open');
+    editingId = null;
+
+    if (!cleanup) return;
+
+    // Attempt cleanup: delete created records in reverse order of dependency:
+    // items first (depend on types/classes), then types, then classes
+    try {
+        // Items (delete external asset/item with same id, backend route handles both)
+        for (const id of tempCreated.items) {
+            try { await fetch(`${API_BASE}/api/items/${id}`, { method: 'DELETE' }); } catch (_) {}
+        }
+        // Types
+        for (const id of tempCreated.types) {
+            try { await fetch(`${API_BASE}/api/item-types/${id}`, { method: 'DELETE' }); } catch (_) {}
+        }
+        // Classifications
+        for (const id of tempCreated.classes) {
+            try { await fetch(`${API_BASE}/api/classifications/${id}`, { method: 'DELETE' }); } catch (_) {}
+        }
+    } catch (err) {
+        console.warn('Cleanup failed:', err);
+    } finally {
+        tempCreated = { items: [], types: [], classes: [] };
+        // Reload reference lists to reflect cleanup
+        try {
+            await Promise.all([loadItems(), loadItemTypes(), loadClassifications()]);
+            populateDynamicFilters();
+        } catch (_) {}
+    }
+};
 
 window.openDrawer = (id) => {
     const a = assets.find(x => x.id == id || x.itemId == id);

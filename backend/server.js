@@ -342,35 +342,58 @@ app.get('/api/items', async (req, res) => {
     }
 });
 
-// CREATE base item only (for + button)
+async function createExternalItemWithDedup({ itemName, itemTypeId = null, classificationId = null, maxAttempts = 10 }) {
+    const mkPayload = (name) => {
+        const payload = { item_name: name };
+        if (itemTypeId != null)        payload.item_type = itemTypeId;
+        if (classificationId != null)  payload.item_classification = classificationId;
+        return payload;
+    };
+
+    let attempt = 1;
+    let usedName = itemName;
+
+    while (attempt <= maxAttempts) {
+        try {
+            const resp = await axios.post(ITEM_API_URL, mkPayload(usedName), {
+                timeout: 15000,
+                headers: { 'Content-Type': 'application/json' },
+            });
+            const newItemId = resp?.data?.id ?? resp?.data?.itemId;
+            if (!newItemId) throw new Error('External items API did not return new ID.');
+            return { id: newItemId, name: usedName };
+        } catch (err) {
+            const status = err?.response?.status;
+            const msg = err?.response?.data?.message || err?.message || '';
+            const looksDuplicate = status === 409 || /duplicate|already exists/i.test(msg);
+            if (!looksDuplicate || attempt === maxAttempts) {
+                throw err;
+            }
+            attempt += 1;
+            usedName = `${itemName} (${attempt})`;
+        }
+    }
+    throw new Error('Exhausted attempts to create item.');
+}
+
+
+// CREATE base item (for + button) — allows duplicate names (auto-suffix if needed)
 app.post('/api/items/base', upload.none(), async (req, res) => {
     try {
         const itemName = (req.body.itemName || '').trim();
         const itemTypeId = toIntOrNull(req.body.itemTypeId);
         const classificationId = toIntOrNull(req.body.classificationId);
+        if (!itemName) return res.status(400).json({ message: 'itemName is required.' });
 
-        if (!itemName || !itemTypeId || !classificationId) {
-            return res.status(400).json({ message: 'itemName, itemTypeId, and classificationId are required.' });
-        }
+        const created = await createExternalItemWithDedup({ itemName, itemTypeId, classificationId });
+        await dbUpsertItem(created.id, created.name, itemTypeId ?? null, classificationId ?? null);
 
-        const itemPayload = {
-            item_type: itemTypeId,
-            item_classification: classificationId,
-            item_name: itemName,
-        };
-
-        const itemResp = await axios.post(ITEM_API_URL, itemPayload, {
-            timeout: 15000,
-            headers: { 'Content-Type': 'application/json' },
+        return res.status(201).json({
+            id: created.id,
+            itemName: created.name,
+            itemTypeId: itemTypeId ?? null,
+            itemClassificationId: classificationId ?? null
         });
-        const newItemId = itemResp?.data?.id ?? itemResp?.data?.itemId;
-        if (!newItemId) throw new Error('External items API did not return new ID.');
-
-        await dbUpsertItem(newItemId, itemName, itemTypeId, classificationId);
-
-        const newItem = { id: newItemId, itemName, itemTypeId, itemClassificationId: classificationId };
-        res.status(201).json(newItem);
-
     } catch (err) {
         console.error('--- ERROR in POST /api/items/base ---');
         const upstreamMsg = err?.response?.data?.message || err?.message || '';
@@ -378,6 +401,8 @@ app.post('/api/items/base', upload.none(), async (req, res) => {
         res.status(500).json({ message: 'Failed to create new item. ' + upstreamMsg });
     }
 });
+
+
 
 
 // CREATE asset (and optionally, a new item)
@@ -400,20 +425,20 @@ app.post('/api/items', upload.none(), async (req, res) => {
             if (!existingItem) return res.status(404).json({ message: `Item with ID ${itemId} not found.` });
             itemDetails = existingItem;
         } else {
-            // Create new item
+// Create new item (Type/Classification OPTIONAL, allow duplicate names)
             const itemName = (body.itemName ?? '').trim();
             const itemTypeId = toIntOrNull(body.itemTypeId);
             const classificationId = toIntOrNull(body.classificationId);
 
-            if (!itemName || !itemTypeId || !classificationId) {
-                return res.status(400).json({ message: 'For new items, itemName, itemTypeId, and classificationId are required.' });
+            if (!itemName) {
+                return res.status(400).json({ message: 'For new items, itemName is required.' });
             }
 
-            const itemPayload = {
-                item_type: itemTypeId,
-                item_classification: classificationId,
-                item_name: itemName,
-            };
+            const created = await createExternalItemWithDedup({ itemName, itemTypeId, classificationId });
+            await dbUpsertItem(created.id, created.name, itemTypeId ?? null, classificationId ?? null);
+            itemId = created.id;
+            itemDetails = { itemName: created.name, itemTypeId, itemClassificationId: classificationId };
+
             if (DEBUG) console.log('[POST /api/items] -> external itemPayload', itemPayload);
 
             const itemResp = await axios.post(ITEM_API_URL, itemPayload, {
@@ -511,30 +536,51 @@ app.put('/api/items/:id', upload.none(), async (req, res) => {
 });
 
 // DELETE asset + base item (API) then mirror delete in DB
+// DELETE asset (if exists) + base item (if exists), then mirror delete in DB
 app.delete('/api/items/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        if (!id) return res.status(400).json({ message: 'Asset ID is required.' });
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ message: 'Asset/Item ID is required.' });
 
-        // Delete asset then item in external services
-        await axios.delete(`${ASSET_API_URL}/${id}`, { timeout: 15000 });
+    const ignoreOrLog = (err, label) => {
+        const status = err?.response?.status;
+        if (status === 404) {
+            // Not found is OK for cleanup semantics
+            console.warn(`[cleanup] ${label} ${id} not found (404) — ignoring.`);
+            return;
+        }
+        console.warn(`[cleanup] ${label} ${id} delete error:`, err?.message || err);
+        throw err; // rethrow non-404
+    };
+
+    try {
+        // Try deleting ASSET; ignore 404
+        try {
+            await axios.delete(`${ASSET_API_URL}/${id}`, { timeout: 15000 });
+        } catch (err) {
+            ignoreOrLog(err, 'asset');
+        }
+
+        // Try deleting ITEM; ignore 404
         try {
             await axios.delete(`${ITEM_API_URL}/${id}`, { timeout: 15000 });
-        } catch {
-            console.warn(`Asset ${id} deleted, but deleting base item (external) failed (may be expected).`);
+        } catch (err) {
+            ignoreOrLog(err, 'item');
         }
 
-        // Mirror delete in local DB
+        // Always attempt local DB cleanup
         try { await dbDeleteItem(+id); } catch (e) {
-            console.warn(`Delete local DB row items.id=${id} failed:`, e?.message || e);
+            console.warn(`[cleanup] local DB items.id=${id} delete failed:`, e?.message || e);
         }
 
-        res.status(204).send();
+        // Success for cleanup semantics even if one side was already gone
+        return res.status(204).send();
     } catch (err) {
-        console.error(`DELETE /api/items/${req.params.id} error:`, err?.message || err);
-        res.status(500).json({ message: 'Failed to delete asset.' });
+        // Only hits if a non-404 error occurred above
+        console.error(`DELETE /api/items/${id} error:`, err?.message || err);
+        return res.status(500).json({ message: 'Failed to delete item/asset.' });
     }
 });
+
 
 // ======================================================
 //               ASSETS & Reference Data (proxy)
@@ -596,6 +642,20 @@ app.post('/api/item-types', async (req, res) => {
     }
 });
 
+// DELETE item type
+app.delete('/api/item-types/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!id) return res.status(400).json({ message: 'id is required.' });
+
+        await axios.delete(`${ITEM_TYPE_API_URL}/${id}`, { timeout: 15000 });
+        return res.status(204).send();
+    } catch (err) {
+        console.error(`DELETE /api/item-types/${req.params.id} error:`, err?.message || err);
+        res.status(500).json({ message: 'Failed to delete item type.' });
+    }
+});
+
 // Classifications
 function normalizeClassificationRow(c) {
     return {
@@ -640,6 +700,21 @@ app.post('/api/classifications', async (req, res) => {
         if (status === 409 || /duplicate/i.test(msg)) msg = 'A classification with the same name already exists.';
         console.error('POST /api/classifications proxy error:', msg);
         return res.status(status >= 400 && status < 600 ? status : 500).json({ message: msg });
+    }
+});
+
+
+// DELETE classification
+app.delete('/api/classifications/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!id) return res.status(400).json({ message: 'id is required.' });
+
+        await axios.delete(`${ITEM_CLASS_API_URL}/${id}`, { timeout: 15000 });
+        return res.status(204).send();
+    } catch (err) {
+        console.error(`DELETE /api/classifications/${req.params.id} error:`, err?.message || err);
+        res.status(500).json({ message: 'Failed to delete classification.' });
     }
 });
 
