@@ -40,6 +40,34 @@ function getLoggedInUser() {
     } catch (_) { return null; }
 }
 
+function getCurrentUser() {
+    try { return JSON.parse(localStorage.getItem('vosUser') || 'null'); } catch { return null; }
+}
+
+// Ensure encoder is the logged-in user; add it if missing; lock the field
+function ensureEncoderSelected() {
+    const encSelect = formEl?.elements?.encoderId;
+    if (!encSelect) return;
+
+    const me = getCurrentUser();
+    if (!me || me.userId == null) return;
+
+    // If not present in options, inject at the top
+    const exists = Array.from(encSelect.options).some(o => String(o.value) === String(me.userId));
+    if (!exists) {
+        const opt = document.createElement('option');
+        opt.value = String(me.userId);
+        opt.textContent = me.fullName ? `${me.fullName} (You)` : `User #${me.userId} (You)`;
+        encSelect.prepend(opt);
+    }
+
+    encSelect.value = String(me.userId);
+    encSelect.disabled = true; // lock to current login
+}
+
+
+
+
 // --- STATE ---
 let items = [];
 let itemTypes = [];
@@ -199,12 +227,16 @@ function populateDynamicFilters() {
 
     const userOptions = users.map(u => `<option value="${u.userId}">${u.fullName}</option>`).join('');
     formEl.elements.employeeId.innerHTML = '<option value="">Select Employee...</option>' + userOptions;
-    formEl.elements.encoderId.innerHTML = '<option value="">Select Encoder...</option>' + userOptions;
+    formEl.elements.encoderId.innerHTML  = '<option value="">Select Encoder...</option>'  + userOptions;
 
     catFilterEl.value = 'all';
     deptFilterEl.value = 'all';
     classFilterEl.value = 'all';
+
+    // 👇 ensure current login is selected & locked after rebuild
+    ensureEncoderSelected();
 }
+
 
 // --- EVENTS ---
 document.getElementById('btn-new').onclick = () => {
@@ -219,25 +251,22 @@ document.getElementById('btn-new').onclick = () => {
     // reset tempCreated when starting a new session
     tempCreated = { items: [], types: [], classes: [] };
 
-    // Auto-fill Encoder with current logged-in user and disable
+    ensureEncoderSelected();       // ← lock encoder to logged-in user
+
+// after successfully creating (inside promptSaveBtn.onclick)
     const currentUser = getLoggedInUser();
     const encoderSelect = formEl.elements.encoderId;
 
-    if (encoderSelect) {
-        encoderSelect.disabled = false; // Ensure it's enabled by default
-        if (currentUser && currentUser.userId != null) {
-            // Check if the current user exists in the main 'users' list
-            const userInList = users.find(u => String(u.userId) === String(currentUser.userId));
-            if (userInList) {
-                encoderSelect.value = String(currentUser.userId);
-                encoderSelect.disabled = true;
-            } else {
-                // If user isn't in the list (e.g., inactive), leave dropdown enabled
-                console.warn("Logged-in user not found in the list of available encoders. The dropdown will remain enabled.");
-                encoderSelect.value = '';
-            }
+    if (encoderSelect && currentUser && currentUser.userId != null) {
+        // if current user is in users list
+        const userInList = users.find(u => String(u.userId) === String(currentUser.userId));
+        if (userInList) {
+            encoderSelect.value = String(currentUser.userId);
+            encoderSelect.disabled = true;
+            formEl.elements.encoderName.value = currentUser.fullName || '';
         }
     }
+
 
     modalEl.classList.add('open');
 };
@@ -321,17 +350,20 @@ promptSaveBtn.onclick = async () => {
             items.sort((a, b) => a.itemName.localeCompare(b.itemName));
             tempCreated.items.push(created.id); // track new item
             populateDynamicFilters();
+            ensureEncoderSelected();
             formEl.elements.itemId.value = created.id;
             formEl.elements.itemId.dispatchEvent(new Event('change')); // Trigger change to auto-fill
         } else if (label === 'Item Type') {
             itemTypes.push(created);
             tempCreated.types.push(created.id); // track new type
             populateDynamicFilters();
+            ensureEncoderSelected();
             formEl.elements.itemTypeId.value = created.id;
         } else { // Classification
             classifications.push(created);
             tempCreated.classes.push(created.id); // track new classification
             populateDynamicFilters();
+            ensureEncoderSelected();
             formEl.elements.classificationId.value = created.id;
         }
 
@@ -571,4 +603,5 @@ document.querySelectorAll('.input').forEach(el => el.classList.add('w-full','px-
 document.addEventListener('DOMContentLoaded', async () => {
     await Promise.all([ loadItems(), loadItemTypes(), loadDepartments(), loadClassifications(), loadUsers(), fetchAssets() ]);
     populateDynamicFilters();
+    ensureEncoderSelected();       // ← set encoder to current login
 });

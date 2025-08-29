@@ -298,14 +298,34 @@ async function dbUpsertItem(id, itemName, itemTypeId, classificationId) {
                                  item_classification = VALUES(item_classification)
     `;
     await pool.query(sql, [id, itemName, itemTypeId, classificationId]);
+    // Also mirror into singular table name if it exists in target environment
+    try {
+        const sql2 = `
+            INSERT INTO item (id, item_name, item_type, item_classification)
+            VALUES (?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                                     item_name = VALUES(item_name),
+                                     item_type = VALUES(item_type),
+                                     item_classification = VALUES(item_classification)
+        `;
+        await pool.query(sql2, [id, itemName, itemTypeId, classificationId]);
+    } catch (_) { /* ignore if table doesn't exist */ }
 }
 async function dbUpdateItem(id, itemName, itemTypeId, classificationId) {
     const sql = `UPDATE items SET item_name=?, item_type=?, item_classification=? WHERE id=?`;
     await pool.query(sql, [itemName, itemTypeId, classificationId, id]);
+    try {
+        const sql2 = `UPDATE item SET item_name=?, item_type=?, item_classification=? WHERE id=?`;
+        await pool.query(sql2, [itemName, itemTypeId, classificationId, id]);
+    } catch (_) { /* ignore if table doesn't exist */ }
 }
 async function dbDeleteItem(id) {
     const sql = `DELETE FROM items WHERE id=?`;
     await pool.query(sql, [id]);
+    try {
+        const sql2 = `DELETE FROM item WHERE id=?`;
+        await pool.query(sql2, [id]);
+    } catch (_) { /* ignore if table doesn't exist */ }
 }
 
 // GET /api/items
@@ -411,6 +431,9 @@ app.post('/api/items', upload.none(), async (req, res) => {
         const body = req.body;
         let itemId = toIntOrNull(body.itemId);
         let itemDetails = {};
+        // Allow updating type/classification for existing items when creating an asset
+        const providedTypeId = toIntOrNull(body.itemTypeId);
+        const providedClassId = toIntOrNull(body.classificationId);
 
         const employeeId = toIntOrNull(body.employeeId ?? body.employee);
         const encoderId  = toIntOrNull(body.encoderId  ?? body.encoder);
@@ -420,10 +443,16 @@ app.post('/api/items', upload.none(), async (req, res) => {
         }
 
         if (itemId) {
-            // Use existing item
+            // Use existing item; update type/classification if provided in request
             const existingItem = await dbGetItemById(itemId);
             if (!existingItem) return res.status(404).json({ message: `Item with ID ${itemId} not found.` });
-            itemDetails = existingItem;
+            const newTypeId = providedTypeId ?? existingItem.itemTypeId ?? null;
+            const newClassId = providedClassId ?? existingItem.itemClassificationId ?? null;
+            // If any changed/provided, persist to local DB
+            if (newTypeId !== existingItem.itemTypeId || newClassId !== existingItem.itemClassificationId) {
+                await dbUpdateItem(itemId, existingItem.itemName, newTypeId, newClassId);
+            }
+            itemDetails = { ...existingItem, itemTypeId: newTypeId, itemClassificationId: newClassId };
         } else {
 // Create new item (Type/Classification OPTIONAL, allow duplicate names)
             const itemName = (body.itemName ?? '').trim();
@@ -439,18 +468,6 @@ app.post('/api/items', upload.none(), async (req, res) => {
             itemId = created.id;
             itemDetails = { itemName: created.name, itemTypeId, itemClassificationId: classificationId };
 
-            if (DEBUG) console.log('[POST /api/items] -> external itemPayload', itemPayload);
-
-            const itemResp = await axios.post(ITEM_API_URL, itemPayload, {
-                timeout: 15000,
-                headers: { 'Content-Type': 'application/json' },
-            });
-            const newItemId = itemResp?.data?.id ?? itemResp?.data?.itemId;
-            if (!newItemId) throw new Error('External items API did not return new ID.');
-
-            await dbUpsertItem(newItemId, itemName, itemTypeId, classificationId);
-            itemId = newItemId;
-            itemDetails = { itemName, itemTypeId, itemClassificationId: classificationId };
         }
 
         // Create asset
