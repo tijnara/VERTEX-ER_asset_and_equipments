@@ -278,6 +278,16 @@ async function dbGetItems() {
         itemClassificationId: r.item_classification,
     }));
 }
+async function dbGetItemById(id) {
+    const sql = `SELECT id, item_name, item_type, item_classification FROM items WHERE id = ?`;
+    const [[row]] = await pool.query(sql, [id]);
+    return row ? {
+        id: row.id,
+        itemName: row.item_name,
+        itemTypeId: row.item_type,
+        itemClassificationId: row.item_classification,
+    } : null;
+}
 async function dbUpsertItem(id, itemName, itemTypeId, classificationId) {
     const sql = `
         INSERT INTO items (id, item_name, item_type, item_classification)
@@ -320,7 +330,8 @@ app.get('/api/items', async (req, res) => {
                 .map(normalizeItemRow).filter(Boolean);
             const map = new Map();
             for (const it of [...apiItems, ...dbItems]) map.set(it.id, it);
-            return res.json([...map.values()]);
+            const sorted = [...map.values()].sort((a,b) => a.itemName.localeCompare(b.itemName));
+            return res.json(sorted);
         }
         // default: db
         const items = await dbGetItems();
@@ -331,66 +342,99 @@ app.get('/api/items', async (req, res) => {
     }
 });
 
-// CREATE item + asset (write-through: API -> DB -> Asset API)
-app.post('/api/items', upload.none(), async (req, res) => {
+// CREATE base item only (for + button)
+app.post('/api/items/base', upload.none(), async (req, res) => {
     try {
-        const itemName = (req.body.itemName ?? req.body.item_name ?? req.body.name ?? '').trim();
+        const itemName = (req.body.itemName || '').trim();
+        const itemTypeId = toIntOrNull(req.body.itemTypeId);
+        const classificationId = toIntOrNull(req.body.classificationId);
 
-        const itemTypeId = toIntOrNull(
-            req.body.itemTypeId ??
-            req.body.item_type_id ??
-            req.body.item_type ??
-            req.body.typeId ??
-            req.body.type_id
-        );
-        const classificationId = toIntOrNull(
-            req.body.classificationId ??
-            req.body.itemClassificationId ??
-            req.body.item_classification_id ??
-            req.body.item_classification ??
-            req.body.classificationId ??
-            req.body.classification_id
-        );
-        const employeeId = toIntOrNull(req.body.employeeId ?? req.body.employee);
-        const encoderId  = toIntOrNull(req.body.encoderId  ?? req.body.encoder);
-
-        if (!itemName || !itemTypeId || !classificationId || !employeeId || !encoderId) {
-            return res.status(400).json({
-                message: 'Missing required asset information (itemName, itemTypeId, classificationId, employeeId, encoderId).'
-            });
+        if (!itemName || !itemTypeId || !classificationId) {
+            return res.status(400).json({ message: 'itemName, itemTypeId, and classificationId are required.' });
         }
 
-        // 1) Create base item in external API
         const itemPayload = {
             item_type: itemTypeId,
             item_classification: classificationId,
-            item_type_id: itemTypeId,
-            item_classification_id: classificationId,
             item_name: itemName,
-            itemName,
-            itemTypeId,
-            itemClassificationId: classificationId,
         };
-        if (DEBUG) console.log('[POST /api/items] -> external itemPayload', itemPayload);
 
         const itemResp = await axios.post(ITEM_API_URL, itemPayload, {
             timeout: 15000,
             headers: { 'Content-Type': 'application/json' },
         });
-        const newItemId = itemResp?.data?.id ?? itemResp?.data?.itemId ?? itemResp?.data?.item_id;
+        const newItemId = itemResp?.data?.id ?? itemResp?.data?.itemId;
         if (!newItemId) throw new Error('External items API did not return new ID.');
 
-        // 2) Mirror item into local MySQL (id must match external)
         await dbUpsertItem(newItemId, itemName, itemTypeId, classificationId);
 
-        // 3) Resolve names (optional, for downstream display)
-        const resolvedTypeName  = await getTypeNameById(itemTypeId);
-        const resolvedClassName = await getClassificationNameById(classificationId);
+        const newItem = { id: newItemId, itemName, itemTypeId, itemClassificationId: classificationId };
+        res.status(201).json(newItem);
 
-        // 4) Create asset row in external assets API
+    } catch (err) {
+        console.error('--- ERROR in POST /api/items/base ---');
+        const upstreamMsg = err?.response?.data?.message || err?.message || '';
+        if (err.response) console.error('Upstream status:', err.response.status);
+        res.status(500).json({ message: 'Failed to create new item. ' + upstreamMsg });
+    }
+});
+
+
+// CREATE asset (and optionally, a new item)
+app.post('/api/items', upload.none(), async (req, res) => {
+    try {
+        const body = req.body;
+        let itemId = toIntOrNull(body.itemId);
+        let itemDetails = {};
+
+        const employeeId = toIntOrNull(body.employeeId ?? body.employee);
+        const encoderId  = toIntOrNull(body.encoderId  ?? body.encoder);
+
+        if (!employeeId || !encoderId) {
+            return res.status(400).json({ message: 'Missing required asset information (employeeId, encoderId).' });
+        }
+
+        if (itemId) {
+            // Use existing item
+            const existingItem = await dbGetItemById(itemId);
+            if (!existingItem) return res.status(404).json({ message: `Item with ID ${itemId} not found.` });
+            itemDetails = existingItem;
+        } else {
+            // Create new item
+            const itemName = (body.itemName ?? '').trim();
+            const itemTypeId = toIntOrNull(body.itemTypeId);
+            const classificationId = toIntOrNull(body.classificationId);
+
+            if (!itemName || !itemTypeId || !classificationId) {
+                return res.status(400).json({ message: 'For new items, itemName, itemTypeId, and classificationId are required.' });
+            }
+
+            const itemPayload = {
+                item_type: itemTypeId,
+                item_classification: classificationId,
+                item_name: itemName,
+            };
+            if (DEBUG) console.log('[POST /api/items] -> external itemPayload', itemPayload);
+
+            const itemResp = await axios.post(ITEM_API_URL, itemPayload, {
+                timeout: 15000,
+                headers: { 'Content-Type': 'application/json' },
+            });
+            const newItemId = itemResp?.data?.id ?? itemResp?.data?.itemId;
+            if (!newItemId) throw new Error('External items API did not return new ID.');
+
+            await dbUpsertItem(newItemId, itemName, itemTypeId, classificationId);
+            itemId = newItemId;
+            itemDetails = { itemName, itemTypeId, itemClassificationId: classificationId };
+        }
+
+        // Create asset
+        const resolvedTypeName  = await getTypeNameById(itemDetails.itemTypeId);
+        const resolvedClassName = await getClassificationNameById(itemDetails.itemClassificationId);
+
         const assetPayload = createAssetPayload(
-            { ...req.body, itemTypeName: resolvedTypeName, classificationName: resolvedClassName },
-            newItemId
+            { ...body, itemName: itemDetails.itemName, itemTypeName: resolvedTypeName, classificationName: resolvedClassName },
+            itemId
         );
         if (DEBUG) console.log('[POST /api/items] -> external assetPayload', assetPayload);
 
@@ -400,6 +444,7 @@ app.post('/api/items', upload.none(), async (req, res) => {
         });
 
         return res.status(201).json({ message: 'Asset created successfully', data: assetResp.data });
+
     } catch (err) {
         console.error('--- ERROR in POST /api/items ---');
         const upstreamMsg = err?.response?.data?.message || err?.response?.data?.error || err?.message || '';
@@ -414,35 +459,18 @@ app.post('/api/items', upload.none(), async (req, res) => {
 // UPDATE item + asset (write-through: API -> DB -> Asset API)
 app.put('/api/items/:id', upload.none(), async (req, res) => {
     try {
-        const { id } = req.params;
+        const { id } = req.params; // This is the ITEM ID, which is also the ASSET ID in the external system.
+        const assetId = id;
 
-        const itemName = (req.body.itemName ?? req.body.item_name ?? req.body.name ?? '').trim();
-        const itemTypeId = toIntOrNull(
-            req.body.itemTypeId ??
-            req.body.item_type_id ??
-            req.body.item_type ??
-            req.body.typeId ??
-            req.body.type_id
-        );
-        const classificationId = toIntOrNull(
-            req.body.classificationId ??
-            req.body.itemClassificationId ??
-            req.body.item_classification_id ??
-            req.body.item_classification ??
-            req.body.classificationId ??
-            req.body.classification_id
-        );
+        const itemName = (req.body.itemName ?? '').trim();
+        const itemTypeId = toIntOrNull(req.body.itemTypeId);
+        const classificationId = toIntOrNull(req.body.classificationId);
 
         // 1) Update external item
         const itemPayload = {
             item_type: itemTypeId,
             item_classification: classificationId,
-            item_type_id: itemTypeId,
-            item_classification_id: classificationId,
             item_name: itemName || undefined,
-            itemName: itemName || undefined,
-            itemTypeId,
-            itemClassificationId: classificationId,
         };
         if (DEBUG) console.log('[PUT /api/items/:id] -> external itemPayload', itemPayload);
 
@@ -460,12 +488,12 @@ app.put('/api/items/:id', upload.none(), async (req, res) => {
 
         // 4) Update external asset row
         const assetPayload = createAssetPayload(
-            { ...req.body, itemTypeName: resolvedTypeName, classificationName: resolvedClassName },
+            { ...req.body, itemName, itemTypeName: resolvedTypeName, classificationName: resolvedClassName },
             +id
         );
         if (DEBUG) console.log('[PUT /api/items/:id] -> external assetPayload', assetPayload);
 
-        const assetResp = await axios.put(`${ASSET_API_URL}/${id}`, assetPayload, {
+        const assetResp = await axios.put(`${ASSET_API_URL}/${assetId}`, assetPayload, {
             timeout: 20000,
             headers: { 'Content-Type': 'application/json' },
         });
