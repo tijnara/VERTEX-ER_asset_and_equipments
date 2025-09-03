@@ -161,7 +161,7 @@
 
     function apiBase() {
         // If the page is served by the same Express (port 3001), return empty.
-        // Otherwise, hardcode your host (e.g. 'http://192.168.0.65:3001')
+        // Otherwise, hardcode your host (e.g. 'http://192.168.68.50:3001')
         return '';
     }
 

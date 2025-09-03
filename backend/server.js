@@ -21,16 +21,34 @@ const HOST = '0.0.0.0';
 // ---- CORS ----
 const allowedOrigins = [
     'http://localhost:3001',
-    `http://192.168.0.65:${PORT}`,
+    `http://192.168.68.50:${PORT}`,
     'http://localhost:63343',
     'http://127.0.0.1:63343',
+    'http://localhost:63342',
+    'http://127.0.0.1:63342',
+    `http://192.168.68.55:${PORT}`,
     'null',
     ...((process.env.CORS_ORIGIN || '')
         .split(',')
         .map(s => s.trim())
         .filter(Boolean)),
 ];
-app.use(cors({ origin: allowedOrigins }));
+
+const corsOptions = {
+    origin: function(origin, callback) {
+        // allow REST tools or same-origin (no origin header)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        return callback(new Error('Not allowed by CORS'));
+    },
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    optionsSuccessStatus: 204,
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // ---- Body parsers ----
 app.use(express.json({ limit: '35mb' }));
@@ -84,14 +102,14 @@ app.post('/api/upload-local', uploadLocal.single('image'), (req, res) => {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
     // ✨ UPDATED: Hardcoded the URL to use your PC's IP address
-    const fileUrl = `http://192.168.0.65:${PORT}/uploads/${req.file.filename}`;
+    const fileUrl = `http://192.168.68.55:${PORT}/uploads/${req.file.filename}`;
 
     return res.json({ message: 'Uploaded successfully', url: fileUrl, filename: req.file.filename });
 });
 
 
 // ---- External API addresses ----
-const EXTERNAL_API_BASE = process.env.EXTERNAL_API_BASE || 'http://192.168.1.49:8080/api';
+const EXTERNAL_API_BASE = process.env.EXTERNAL_API_BASE || 'http://goatedcodoer:8080/api';
 const USER_API_URL       = `${EXTERNAL_API_BASE}/users`;
 const ITEM_CLASS_API_URL = `${EXTERNAL_API_BASE}/item-classifications`;
 const ITEM_TYPE_API_URL  = `${EXTERNAL_API_BASE}/item-types`;
@@ -940,5 +958,5 @@ app.post('/api/upload-url', (req, res) => {
 
 // ---- Start server ----
 app.listen(PORT, HOST, () => {
-    console.log(`API + static files at http://localhost:${PORT} (open http://192.168.0.65:${PORT})`);
+    console.log(`API + static files at http://localhost:${PORT} (open http://192.168.68.55:${PORT})`);
 });
