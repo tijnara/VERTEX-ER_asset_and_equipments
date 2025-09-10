@@ -11,68 +11,54 @@
     <link rel="stylesheet" href="vos.css">
     <style>
         body { font-family: 'Inter', system-ui, sans-serif; }
-        /* Custom scrollbar */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #e2e8f0; }
         ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #64748b; }
-
-        .modal {
-            position: fixed; inset: 0; top: 0; right: 0; bottom: 0; left: 0;
-            display: none; background: rgba(15, 23, 42, 0.6);
-            -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
-            align-items: center; justify-content: center; z-index: 1000;
-        }
+        .modal { display: none; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); }
         .modal.open { display: flex; }
-
-        .drawer { position: fixed; inset: 0; top: 0; right: 0; bottom: 0; left: 0; z-index: 900; display: none; }
+        .drawer { display: none; }
         .drawer.open { display: block; }
-        .drawer .mask {
-            position: absolute; inset: 0; top: 0; right: 0; bottom: 0; left: 0;
-            background: rgba(15, 23, 42, 0.6);
-            -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
-        }
-        .drawer .panel {
-            position: absolute; top: 0; right: 0; height: 100%; width: 100%;
-            max-width: 450px; padding: 1.5rem; overflow-y: auto;
-        }
-        /* Prompt modal above main modal */
+        .drawer .mask { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); }
         #prompt-modal { z-index: 2000; }
-
-        /* Toasts */
         .toast { transition: opacity 0.3s, transform 0.3s; transform: translateX(100%); opacity: 0; }
         .toast.show { transform: translateX(0); opacity: 1; }
+        @supports not ((backdrop-filter: blur(4px)) or (-webkit-backdrop-filter: blur(4px))) {
+            .modal, .drawer .mask { background: rgba(15,23,42,0.82); }
+        }
+        .datepicker { background:#fff; border:1px solid #e2e8f0; border-radius:.75rem; box-shadow:0 8px 24px rgba(0,0,0,.12); width: 18.5rem; }
+        .dp-head { display:flex; align-items:center; justify-content:space-between; padding:.5rem .75rem; border-bottom:1px solid #e2e8f0; }
+        .dp-btn { border:1px solid #e2e8f0; background:#f8fafc; padding:.25rem .5rem; border-radius:.5rem; cursor:pointer; }
+        .dp-title { font-weight:600; }
+        .dp-table { width:100%; border-collapse:collapse; table-layout:fixed; }
+        .dp-table th { font-size:.75rem; color:#64748b; font-weight:600; padding:.35rem 0; }
+        .dp-table td { text-align:center; padding:.25rem 0; }
+        .dp-day { width:2rem; height:2rem; line-height:2rem; display:inline-block; border-radius:.5rem; cursor:pointer; }
+        .dp-day:hover { background:#e2e8f0; }
+        .dp-day.out { color:#94a3b8; }
+        .dp-day.today { border:1px solid #1e88e5; }
+        .dp-day.sel { background:#1e88e5; color:#fff; }
+        .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }
     </style>
 </head>
 <body>
 <script>
-    // Auth guard
-    (function(){
-        try{
-            var user = localStorage.getItem('vosUser');
-            if(!user){ window.location.replace('index.html'); }
-        }catch(e){ window.location.replace('index.html'); }
-        window.addEventListener('DOMContentLoaded', function(){
-            var logoutBtn = document.getElementById('btn-logout');
-            if(logoutBtn){
-                logoutBtn.addEventListener('click', function(){
-                    try{ localStorage.removeItem('vosUser'); localStorage.removeItem('userId'); }catch(_){ }
-                    try{ sessionStorage.removeItem('vosUser'); }catch(_){ }
-                    window.location.href = 'index.html';
-                });
-            }
-        });
-    })();
+    try{ if(!localStorage.getItem('vosUser')){ location.replace('index.html'); } }catch(e){ location.replace('index.html'); }
+    window.__API_BASE__ = 'http://100.119.3.44:8080';
+    window.addEventListener('DOMContentLoaded', function(){
+        var b = document.getElementById('btn-logout');
+        if(b){ b.addEventListener('click', function(){ localStorage.removeItem('vosUser'); location.href='index.html'; }); }
+    });
 </script>
 
-<div id="toast-container" class="fixed top-5 right-5 z-[100] space-y-2"></div>
+<div id="toast-container" class="fixed top-5 right-5 z-[2100] space-y-2"></div>
 
 <header class="vos-header">
     <div class="vos-header-inner">
         <div class="vos-brand">VERTEX</div>
         <div class="flex items-center gap-4">
-            <button class="vos-btn-primary text-white font-semibold py-2 px-4 rounded-lg" id="btn-new">+ New Asset</button>
-            <button class="vos-btn-secondary text-white font-semibold py-2 px-4 rounded-lg" id="btn-logout">Logout</button>
+            <button class="vos-btn-primary" id="btn-new">+ New Asset</button>
+            <button class="vos-btn-secondary" id="btn-logout">Logout</button>
         </div>
     </div>
 </header>
@@ -124,95 +110,111 @@
     </div>
 </main>
 
-<div class="modal" id="modal">
+<!-- New / Edit Asset Modal -->
+<div class="modal fixed inset-0 items-center justify-center z-[1000]" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="vos-card w-full max-w-4xl m-4">
         <div class="flex justify-between items-center p-4 border-b">
             <h3 id="modal-title" class="text-lg font-semibold">New Asset</h3>
-            <button class="p-2 rounded-full hover:bg-slate-100" onclick="closeModal()">
+            <button class="p-2 rounded-full hover:bg-slate-100" onclick="window.App.closeModal()" aria-label="Close">
                 <svg class="w-5 h-5 text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708 .708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
             </button>
         </div>
-        <form id="asset-form" class="p-4 max-h-[80vh] overflow-y-auto">
+
+        <form id="asset-form" class="p-4 max-h-[80vh] overflow-y-auto" novalidate>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- Item Name (typeahead) -->
                     <div class="sm:col-span-2">
+
                         <label class="label">Item Name</label>
-                        <div class="flex items-center gap-2">
-                            <select name="itemId" required class="input"></select>
-                            <button type="button" id="btn-new-item" class="vos-btn-secondary p-2 rounded-full" title="Add New Item">
-                                <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16">
-                                    <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
-                                </svg>
-                            </button>
+
+                        <div class="relative">
+                            <input type="text" id="itemNameInput" class="input" placeholder="Start typing…" autocomplete="off" required/>
+                            <select id="itemNameSelect" class="input" style="display:none;"></select>
+                            <input type="hidden" id="itemIdHidden" name="itemId"/>
+                            <ul id="itemNameSuggest" class="absolute z-[2050] mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-auto" style="display:none;"></ul>
                         </div>
                     </div>
 
+                    <!-- Item Type (typeahead) -->
                     <div>
                         <label class="label">Item Type</label>
-                        <div class="flex items-center gap-2">
-                            <select name="itemTypeId" required class="input"></select>
-                            <button type="button" id="btn-new-type" class="vos-btn-secondary p-2 rounded-full" title="Add New Item Type">
-                                <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
-                            </button>
+                        <div class="relative">
+                            <input type="text" id="itemTypeInput" class="input" placeholder="Start typing…" autocomplete="off" required/>
+                            <select id="itemTypeSelect" class="input" style="display:none;"></select>
+                            <input type="hidden" id="itemTypeIdHidden" name="itemTypeId"/>
+                            <ul id="itemTypeSuggest" class="absolute z-[2050] mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-auto" style="display:none;"></ul>
                         </div>
                     </div>
+
+                    <!-- Classification (typeahead) -->
                     <div>
                         <label class="label">Classification</label>
-                        <div class="flex items-center gap-2">
-                            <select name="classificationId" required class="input"></select>
-                            <button type="button" id="btn-new-class" class="vos-btn-secondary p-2 rounded-full" title="Add New Classification">
-                                <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
-                            </button>
+                        <div class="relative">
+                            <input type="text" id="classInput" class="input" placeholder="Start typing…" autocomplete="off" required/>
+                            <select id="classSelect" class="input" style="display:none;"></select>
+                            <input type="hidden" id="classIdHidden" name="classificationId"/>
+                            <ul id="classSuggest" class="absolute z-[2050] mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-auto" style="display:none;"></ul>
                         </div>
                     </div>
+
+                    <div><label class="label">Department</label><select name="departmentId" required class="input"></select></div>
+                    <div><label class="label">Cost (PHP)</label><input type="number" step="0.01" name="totalCost" required class="input"></div>
+
                     <div>
-                        <label class="label">Department</label>
-                        <select name="departmentId" required class="input"></select>
+                        <label class="label">Purchase Date <span class="text-xs text-slate-500">(YYYY-MM-DD)</span></label>
+                        <div class="relative">
+                            <div class="flex items-center gap-2">
+                                <input id="purchaseDate" name="purchaseDate" type="text" required
+                                       inputmode="numeric" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"
+                                       class="input" autocomplete="off" aria-describedby="pd-help">
+                                <button type="button" id="btn-date" class="vos-btn-secondary p-2 rounded-md" aria-label="Open calendar">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2h2v2h6V2h2v2h3a1 1 0 011 1v15a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1h3V2zm13 6H4v12h16V8z"/></svg>
+                                </button>
+                            </div>
+                            <div id="date-pop" class="datepicker absolute left-0 mt-2 z-[2050]" style="display:none;"></div>
+                            <div id="pd-help" class="sr-only">Enter date as YYYY-MM-DD or use the calendar button.</div>
+                        </div>
                     </div>
 
-                    <div><label class="label">Cost (PHP)</label><input type="number" step="0.01" name="totalCost" required class="input"></div>
-                    <div><label class="label">Purchase Date</label><input type="date" name="purchaseDate" required class="input"></div>
                     <div><label class="label">Life Span (Years)</label><input type="number" name="lifeSpan" required class="input"></div>
-                    <div>
-                        <label class="label">Condition</label>
-                        <select name="condition" class="input">
-                            <option>Good</option><option>Bad</option><option>Under Maintenance</option><option>Discontinued</option>
+                    <div><label class="label">Condition</label>
+                        <select name="condition" class="input" required>
+                            <option>Good</option>
+                            <option>Bad</option>
+                            <option>Under Maintenance</option>
+                            <option>Discontinued</option>
                         </select>
                     </div>
-
                     <div><label class="label">Employee</label><select name="employeeId" required class="input"></select></div>
                     <div><label class="label">Encoder</label><select name="encoderId" required class="input"></select></div>
-
-                    <input type="hidden" name="itemName">
-                    <input type="hidden" name="employeeName">
-                    <input type="hidden" name="encoderName">
-                    <input type="hidden" name="itemTypeName">
-                    <input type="hidden" name="classificationName">
-                    <input type="hidden" name="departmentName">
                 </div>
+
                 <div class="md:col-span-1">
                     <label class="label">Image</label>
                     <div class="w-full h-64 border-2 border-dashed rounded-lg flex items-center justify-center bg-slate-50">
-                        <img id="image-preview" src="https://placehold.co/400x300/e2e8f0/475569?text=No+Image" class="max-h-full max-w-full object-contain rounded">
+                        <img id="image-preview" src="https://placehold.co/400x300/e2e8f0/475569?text=No+Image" class="max-h-full max-w-full object-contain rounded" alt="Image Preview">
                     </div>
-                    <input type="file" id="image-uploader" class="input mt-2" accept="image/*">
+                    <input type="file" id="image-uploader" class="input mt-2" accept="image/*" aria-label="Upload Image" required>
                     <input type="hidden" name="imageUrl">
                 </div>
             </div>
+
             <div class="mt-6 flex justify-end gap-3">
-                <button type="button" class="vos-btn-secondary py-2 px-4 rounded-lg" onclick="closeModal()">Cancel</button>
-                <button type="submit" class="vos-btn-primary text-white font-semibold py-2 px-4 rounded-lg">Save Asset</button>
+                <button type="button" class="vos-btn-secondary" onclick="window.App.closeModal()">Cancel</button>
+                <button type="submit" class="vos-btn-primary">Save Asset</button>
             </div>
         </form>
     </div>
 </div>
 
-<div class="drawer" id="drawer">
-    <div class="mask" onclick="closeDrawer()"></div>
-    <div class="vos-card panel">
+<!-- Drawer (details) -->
+<div class="drawer fixed inset-0 z-[900]" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+    <div class="mask absolute inset-0" onclick="window.App.closeDrawer()" aria-hidden="true"></div>
+    <div class="vos-card panel absolute top-0 right-0 h-full w-full max-w-md p-6 overflow-y-auto">
         <div class="flex justify-between items-center mb-6">
-            <h3 class="text-lg font-semibold">Asset Details</h3>
-            <button class="p-2 rounded-full hover:bg-slate-100" onclick="closeDrawer()">
+            <h3 class="text-lg font-semibold" id="drawer-title">Asset Details</h3>
+            <button class="p-2 rounded-full hover:bg-slate-100" onclick="window.App.closeDrawer()" aria-label="Close">
                 <svg class="w-5 h-5 text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708 .708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
             </button>
         </div>
@@ -220,22 +222,50 @@
     </div>
 </div>
 
-<div class="modal" id="prompt-modal">
+<!-- Prompt Modal (kept for future use) -->
+<div class="modal fixed inset-0 items-center justify-center" id="prompt-modal" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
     <div class="vos-card w-full max-w-sm m-4">
         <h3 id="prompt-title" class="text-lg font-semibold p-4 border-b">Add New</h3>
         <div class="p-4">
             <label id="prompt-label" class="label">Name</label>
-            <input id="prompt-input" class="input">
+            <input id="prompt-input" class="input" aria-labelledby="prompt-label">
+
+            <div id="prompt-item-extras" style="display: none;" class="mt-3 space-y-2">
+                <label for="prompt-type-input" class="label">Item Type</label>
+                <div class="relative">
+                    <input id="prompt-type-input" class="input" placeholder="e.g. Laptop" autocomplete="off" />
+                    <ul id="prompt-type-suggest" class="absolute z-[2050] mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-auto" style="display:none;"></ul>
+                </div>
+                <label for="prompt-class-input" class="label">Classification</label>
+                <div class="relative">
+                    <input id="prompt-class-input" class="input" placeholder="e.g. Sample Classification" autocomplete="off" />
+                    <ul id="prompt-class-suggest" class="absolute z-[2050] mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-auto" style="display:none;"></ul>
+                </div>
+            </div>
+
             <div id="prompt-error" class="text-sm text-[var(--vos-danger)] mt-1" style="display: none;"></div>
         </div>
         <div class="mt-2 p-4 flex justify-end gap-3 bg-slate-50 rounded-b-xl">
-            <button type="button" class="vos-btn-secondary py-2 px-4 rounded-lg" id="prompt-cancel">Cancel</button>
-            <button type="button" class="vos-btn-primary text-white font-semibold py-2 px-4 rounded-lg" id="prompt-save">Save</button>
+            <button type="button" class="vos-btn-secondary" id="prompt-cancel">Cancel</button>
+            <button type="button" class="vos-btn-primary" id="prompt-save">Save</button>
         </div>
     </div>
 </div>
 
-<script src="script_asset-manager.js"></script>
+<!-- Confirm Modal (kept for future use) -->
+<div class="modal fixed inset-0 items-center justify-center z-[2200]" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title" style="display:none;">
+    <div class="vos-card w-full max-w-sm m-4">
+        <h3 class="text-lg font-semibold p-4 border-b" id="confirm-title">Confirm</h3>
+        <div class="p-4" id="confirm-message">Are you sure?</div>
+        <div class="mt-2 p-4 flex justify-end gap-3 bg-slate-50 rounded-b-xl">
+            <button type="button" class="vos-btn-secondary" id="confirm-cancel">Cancel</button>
+            <button type="button" class="vos-btn-primary" id="confirm-ok">OK</button>
+        </div>
+    </div>
+</div>
 
+<script src="script_asset-manager.js" defer></script>
 </body>
+
+
 </html>

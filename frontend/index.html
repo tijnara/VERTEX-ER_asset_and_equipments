@@ -47,6 +47,13 @@
     </footer>
 </div>
 
+<!-- 🔧 API base: use localhost on the server, otherwise use Tailscale IP -->
+<script>
+    // Use same-origin so the backend proxy forwards to the upstream API host
+    window.__API_BASE__ = 'http://100.119.3.44:8080';
+</script>
+
 <script src="script.js" defer></script>
 </body>
+
 </html>
