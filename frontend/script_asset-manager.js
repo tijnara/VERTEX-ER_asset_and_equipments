@@ -400,63 +400,15 @@ document.addEventListener('DOMContentLoaded', () => {
           ${card("Life Span (Years)", safeText(a.lifeSpan,'').replace(' months',''))}
           ${card("Condition", safeText(a.condition))}
           ${card("Encoded By", safeText(a.encoderName), true)}
-        </div>
-        <div class="mt-6 flex flex-col sm:flex-row gap-2">
-          <button class='vos-btn-primary w-full' onclick="window.App.editAsset('${a.id || a.itemId}')">Edit</button>
-          <button class='vos-btn-danger w-full' onclick="window.App.removeAsset('${a.id || a.itemId}')">Delete</button>
+          ${card("RFID Code", safeText(a.rfidCode || a.rfid || a.rfid_code))}
+          ${card("Bar Code", safeText(a.barCode || a.barcode || a.bar_code))}
         </div>`;
             elements.drawerEl.classList.add('open');
         },
 
         closeDrawer: () => elements.drawerEl?.classList.remove('open'),
 
-        editAsset: (assetId) => {
-            const a = state.allAssets.find(x => (x.id == assetId || x.itemId == assetId));
-            if (!a) return showToast('Asset not found for editing.', true);
-            state.editingId = a.id;
-            elements.assetFormEl.reset();
-            App.closeDrawer();
-            elements.modalTitleEl.textContent = 'Edit Asset';
 
-            // Fill inputs for typeahead
-            itemNameInput.value    = a.itemName || '';
-            itemIdHidden.value     = a.itemId || '';
-
-            itemTypeInput.value    = a.itemTypeName || '';
-            itemTypeIdHidden.value = a.itemTypeId || '';
-
-            classInput.value       = a.itemClassificationName || '';
-            classIdHidden.value    = a.itemClassificationId || a.classificationId || '';
-
-            const f = elements.assetFormEl;
-            f.elements.departmentId.value = a.departmentId || '';
-            f.elements.totalCost.value    = a.costPerItem || a.totalCost || '';
-            f.elements.purchaseDate.value = toInputDate(a.dateAcquired);
-            f.elements.lifeSpan.value     = a.lifeSpan || '';
-            f.elements.condition.value    = a.condition || 'Good';
-            f.elements.employeeId.value   = a.employeeId || '';
-            f.elements.encoderId.value    = a.encoderId || '';
-            f.elements.imageUrl.value     = a.itemImage || '';
-
-            const $imgInput = document.getElementById('image-uploader');
-            if ($imgInput) $imgInput.required = !a.itemImage;
-
-            const $imagePreview = document.getElementById('image-preview');
-            if ($imagePreview) $imagePreview.src = a.itemImage || 'https://placehold.co/400x300/e2e8f0/475569?text=No+Image';
-
-            elements.modalEl.classList.add('open');
-            updateSaveEnabled();
-        },
-
-        removeAsset: async (id) => {
-            const ok = await confirmAsync(`Delete asset ID: ${id}? This cannot be undone.`);
-            if (!ok) return;
-            const r = await api.del('assets', id);
-            if (!r.ok) { showToast('Delete failed', true); return; }
-            showToast('Asset deleted.');
-            App.closeDrawer();
-            initialize(); // refresh data
-        },
 
         openPrompt: (type) => {
             state.currentPromptType = type;
@@ -938,6 +890,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 departmentId: Number(data.departmentId), departmentName: dp?.departmentName,
                 employeeId: Number(data.employeeId), employeeName: state.allUsers.find(u=>u.userId==data.employeeId)?.fullName,
                 encoderId: Number(data.encoderId), encoderName: state.allUsers.find(u=>u.userId==data.encoderId)?.fullName,
+                // Optional codes
+                rfidCode: (data.rfidCode || '').trim() || null,
+                barCode: (data.barCode || '').trim() || null,
                 dateAcquired: data.purchaseDate,
                 costPerItem: Number(data.totalCost), totalCost: Number(data.totalCost),
                 lifeSpan: Number(data.lifeSpan), condition: data.condition,
@@ -965,6 +920,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (payload.lifeSpan != null) { payload.lifespan = payload.lifeSpan; payload.life_span = payload.lifeSpan; }
                 // Condition/Status
                 if (payload.condition) { payload.status = payload.condition; payload.assetCondition = payload.condition; payload.asset_condition = payload.condition; }
+                // Codes
+                if (payload.rfidCode) { payload.rfid = payload.rfidCode; payload.rfid_code = payload.rfidCode; }
+                if (payload.barCode) { payload.barcode = payload.barCode; payload.bar_code = payload.barCode; }
             } catch {}
 
             const isEdit = !!state.editingId;

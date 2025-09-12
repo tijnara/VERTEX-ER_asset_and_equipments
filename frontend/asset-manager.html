@@ -123,6 +123,16 @@
         <form id="asset-form" class="p-4 max-h-[80vh] overflow-y-auto" novalidate>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- RFID + Bar Code Row -->
+                    <div>
+                        <label class="label" for="rfidCode">RFID Code</label>
+                        <input type="text" id="rfidCode" name="rfidCode" class="input" placeholder="Scan RFID code" autocomplete="off" />
+                    </div>
+                    <div>
+                        <label class="label" for="barCode">Bar Code</label>
+                        <input type="text" id="barCode" name="barCode" class="input" placeholder="Scan bar code" autocomplete="off" />
+                    </div>
+
                     <!-- Item Name (typeahead) -->
                     <div class="sm:col-span-2">
 

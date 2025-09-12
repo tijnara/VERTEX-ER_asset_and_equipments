@@ -914,6 +914,20 @@ function enhancedAssetNormalization(body) {
         out.asset_condition = condition;
     }
 
+    // Codes normalization: mirror RFID and Bar Code across common aliases
+    const rfidCode = out.rfidCode ?? out.rfid ?? out.rfid_code ?? out.RFIDCode;
+    if (rfidCode !== undefined) {
+        out.rfidCode = rfidCode;
+        out.rfid = rfidCode;
+        out.rfid_code = rfidCode;
+    }
+    const barcode = out.barcode ?? out.barCode ?? out.bar_code ?? out.barCodeNumber ?? out.barcodeNumber;
+    if (barcode !== undefined) {
+        out.barcode = barcode;
+        out.barCode = barcode;
+        out.bar_code = barcode;
+    }
+
     // Final cleanup: ensure no nested objects are sent for asset type/classification
     if (out.itemType && typeof out.itemType === 'object') delete out.itemType;
     if (out.itemClassification && typeof out.itemClassification === 'object') delete out.itemClassification;
