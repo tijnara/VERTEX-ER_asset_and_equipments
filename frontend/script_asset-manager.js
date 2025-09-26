@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let state = {
         allAssets: [], allItems: [], allItemTypes: [],
         allClassifications: [], allDepartments: [], allUsers: [],
-        editingId: null, currentPromptType: null,
+        editingId: null, currentPromptType: null, currentAsset: null,
         // Tracks sub-items created during a modal session for potential cleanup on cancel.
         tempCreated: { items: [], types: [], classes: [] },
         // When starting a new Asset, force creating/selecting a new Item first
@@ -341,7 +341,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ---------- GLOBAL APP ACTIONS ----------
-    window.App = {
+    window.App = Object.assign(window.App || {}, { 
         closeModal: async (opts = {}) => {
             const { skipTempCleanup = false } = opts;
             const isNew = !state.editingId;
@@ -383,6 +383,8 @@ document.addEventListener('DOMContentLoaded', () => {
         openDrawer: (assetId) => {
             const a = state.allAssets.find(x => (x.id == assetId || x.itemId == assetId));
             if (!a || !elements.drawerEl) return;
+            state.currentAsset = a;
+            window.App.__currentAsset = a;
             const card = (k,v,full=false)=> (v && v!=='—') ? `<div class="vos-card p-3 ${full?'sm:col-span-2':''}"><div class="text-xs text-slate-500">${k}</div><div class="font-semibold break-words">${v}</div></div>` : '';
             elements.drawerBodyEl.innerHTML = `
         <div class="vos-card p-4 mb-4">
@@ -404,6 +406,10 @@ document.addEventListener('DOMContentLoaded', () => {
           ${card("Bar Code", safeText(a.barCode || a.barcode || a.bar_code))}
         </div>`;
             elements.drawerEl.classList.add('open');
+            try {
+                const btn = document.getElementById('btn-print-asset');
+                if (btn) btn.onclick = () => App.printAsset();
+            } catch (e) {}
         },
 
         closeDrawer: () => elements.drawerEl?.classList.remove('open'),
@@ -442,7 +448,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 App.closeModal();
             }
         },
-    };
+    });
 
     // ---------- Non-blocking confirm ----------
     const confirmAsync = (message, title = 'Confirm', opts = {}) => new Promise(resolve => {
@@ -1359,3 +1365,148 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initialize();
 });
+
+// ----- Print to PDF: Asset Details -----
+window.App = window.App || {};
+window.App.printAsset = function() {
+    var a = null;
+    try {
+        if (window.App && window.App.__currentAsset) {
+            a = window.App.__currentAsset;
+        } else if (typeof state !== 'undefined' && state && state.currentAsset) {
+            a = state.currentAsset;
+        }
+    } catch (e) {}
+    if (!a) {
+        try { showToast('No asset selected to print.', true); } catch (e) { alert('No asset selected to print.'); }
+        return;
+    }
+
+    // Gather requester info
+    let vosUser = {};
+    try { vosUser = JSON.parse(localStorage.getItem('vosUser') || '{}') || {}; } catch (e) {}
+
+    // Helper to convert possibly-relative URLs to absolute, using API base when available
+    function toAbsoluteUrl(u) {
+        var url = (u || '').trim();
+        if (!url) return '';
+        var base = ((window.__API_BASE__ || location.origin || '') + '/').replace(/\/+$/, '/');
+        try {
+            var abs = new URL(url, base);
+            return abs.href;
+        } catch (e) {
+            try { return base.replace(/\/+$/, '/') + url.replace(/^\/+/, ''); } catch (_) { return url; }
+        }
+    }
+
+    const title = (a.itemName ? String(a.itemName) : 'Asset Details');
+    const assetId = (a.id ?? a.itemId ?? '—');
+    const itemType = (a.itemTypeName ?? '—');
+    const classification = (a.itemClassificationName ?? '—');
+    const department = (a.departmentName ?? '—');
+    const employee = (a.employeeName ?? '—');
+    const purchaseDate = (typeof formatDate === 'function') ? formatDate(a.dateAcquired) : (a.dateAcquired || '—');
+    const cost = (typeof peso === 'function') ? peso(a.total || a.totalCost) : (a.total || a.totalCost || '—');
+    const lifeSpan = (a.lifeSpan ? String(a.lifeSpan).replace(' months','') : '—');
+    const condition = (a.condition ?? '—');
+    const encoder = (a.encoderName ?? '—');
+    const rfid = (a.rfidCode || a.rfid || a.rfid_code || '—');
+    const barcode = (a.barCode || a.barcode || a.bar_code || '—');
+    const rawImg = (a.itemImage || '');
+    const img = rawImg ? toAbsoluteUrl(rawImg) : 'https://placehold.co/800x600/e2e8f0/475569?text=No+Image';
+    const now = new Date();
+    const nowStr = now.toLocaleString();
+
+    const css = `
+      @page { size: A4; margin: 18mm; }
+      * { box-sizing: border-box; }
+      body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; }
+      .header { display:flex; align-items:center; justify-content:space-between; border-bottom:2px solid #0ea5e9; padding-bottom:10px; margin-bottom:16px; }
+      .brand { font-size: 20px; font-weight: 800; letter-spacing: 1px; color:#0ea5e9; }
+      .meta { text-align:right; font-size: 12px; color:#475569; }
+      h1 { margin: 8px 0 2px; font-size: 18px; }
+      .subtle { color:#475569; font-size: 12px; }
+      .img { width:100%; max-height: 260px; object-fit: cover; border:1px solid #e2e8f0; border-radius: 8px; background:#f8fafc; }
+      .grid { display:grid; grid-template-columns: 1fr 1fr; gap:10px 16px; margin-top:12px; }
+      .card { border:1px solid #e2e8f0; border-radius:8px; padding:10px; }
+      .label { font-size:11px; color:#64748b; margin-bottom:4px; }
+      .value { font-size:14px; font-weight:600; color:#0f172a; word-break: break-word; }
+      table.spec { width:100%; border-collapse: collapse; margin-top: 12px; }
+      table.spec th, table.spec td { text-align:left; padding:8px 10px; border:1px solid #e2e8f0; font-size: 13px; vertical-align: top; }
+      table.spec th { width:32%; background:#f8fafc; color:#0f172a; }
+      .signatures { display:grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px; }
+      .sig-box { border-top:1px solid #0f172a; padding-top:6px; font-size: 12px; }
+      .footer { margin-top: 8px; font-size: 11px; color:#64748b; }
+      @media print { .no-print { display:none !important; } }
+    `;
+
+    const rows = [
+      ['Asset ID', String(assetId)],
+      ['Item Name', String(title)],
+      ['Item Type', String(itemType)],
+      ['Classification', String(classification)],
+      ['Department', String(department)],
+      ['Assigned To', String(employee)],
+      ['Purchase Date', String(purchaseDate)],
+      ['Cost', String(cost)],
+      ['Life Span (Years)', String(lifeSpan)],
+      ['Condition', String(condition)],
+      ['Encoded By', String(encoder)],
+      ['RFID Code', String(rfid)],
+      ['Bar Code', String(barcode)],
+    ];
+
+    const tableHtml = rows.map(([k,v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('');
+
+    const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Asset Details - ${title}</title>
+<style>${css}</style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">VERTEX</div>
+    <div class="meta">
+      <div><strong>Asset Details for Request</strong></div>
+      <div>${nowStr}</div>
+    </div>
+  </div>
+
+  <h1>${title}</h1>
+  <div class="subtle">Asset ID: ${assetId}</div>
+
+  <div style="margin: 12px 0 6px;">
+    <img class="img" src="${img}" alt="Asset Image" />
+  </div>
+
+  <table class="spec">${tableHtml}</table>
+
+  <div class="signatures">
+    <div>
+      <div class="sig-box">Requested By: ${vosUser.fullName || '&nbsp;'}</div>
+      <div class="subtle">${[vosUser.position, vosUser.department].filter(Boolean).join(' • ')}</div>
+      <div class="subtle" style="margin-top:4px;">Signature/Date: __________________________</div>
+    </div>
+    <div>
+      <div class="sig-box">Approved By:</div>
+      <div class="subtle">Signature/Date: __________________________</div>
+    </div>
+  </div>
+
+  <div class="footer">Generated by VERTEX Asset & Equipments • ${nowStr}</div>
+
+  <script>window.onload = function(){ try{ window.focus(); window.print(); }catch(e){} };</script>
+</body>
+</html>`;
+
+    const w = window.open('', '_blank');
+    if (!w) {
+        try { showToast('Popup blocked. Please allow popups to print.', true); } catch (e) { alert('Popup blocked. Please allow popups to print.'); }
+        return;
+    }
+    w.document.open('text/html');
+    w.document.write(html);
+    w.document.close();
+};
