@@ -2,20 +2,21 @@
   "name": "vertex-er_hr",
   "version": "1.0.0",
   "description": "",
-  "main": "../index.js",
+  "main": "server_asset.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node backend/server_asset.js"
   },
   "private": true,
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "axios": "^1.11.0",
+    "@supabase/supabase-js": "^2.80.0",
     "cors": "^2.8.5",
+    "debug": "^4.3.4",
     "dotenv": "^17.2.1",
-    "express": "^5.1.0",
-    "multer": "^2.0.2",
-    "mysql2": "^3.14.3"
+    "express": "^4.18.2",
+    "finalhandler": "^1.2.0",
+    "multer": "^2.0.2"
   }
 }

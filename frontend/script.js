@@ -5,11 +5,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const emailInput = document.getElementById('email');
     const passwordInput = document.getElementById('password');
 
-    // Determine API base: prefer same-origin when hosted on our backend (ports 3011/8080) or known hosts; otherwise honor window.__API_BASE__ or default to localhost:3011
+    // Determine API base: prefer same-origin when hosted on our backend (port 8080) or known hosts; otherwise honor window.__API_BASE__ or default to localhost:8080
     function resolveApiBase() {
         try {
             const u = new URL(location.href);
-            const isKnownHost = (u.port === '3011' || u.port === '8080' || u.hostname === 'goatedcodoer' || u.hostname === '100.119.3.44');
+            const isKnownHost = (u.port === '8080');
             if (isKnownHost) {
                 return location.origin.replace(/\/$/, '');
             }
@@ -18,13 +18,13 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             if (hintedRaw) {
                 const h = new URL(hintedRaw);
-                const hintedKnown = (h.port === '3011' || h.port === '8080' || h.hostname === 'goatedcodoer' || h.hostname === '100.119.3.44');
+                const hintedKnown = (h.port === '8080');
                 if (hintedKnown) return hintedRaw;
             }
         } catch (_) {
             if (hintedRaw && hintedRaw !== location.origin.replace(/\/$/, '')) return hintedRaw;
         }
-        return 'http://100.119.3.44:8080';
+        return 'http://localhost:8080';
     }
     const API_BASE = resolveApiBase();
     const API_URL = `${API_BASE}/api/users`;
@@ -57,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response && response.ok) {
                 try { users = await response.json(); } catch { users = []; }
             } else {
-                const fallbackBase = 'http://100.119.3.44:8080';
+                const fallbackBase = 'http://localhost:8080';
                 const fallbackUrl = `${fallbackBase}/api/users`;
                 if (!API_URL.startsWith(fallbackBase)) {
                     try {

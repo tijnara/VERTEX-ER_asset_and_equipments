@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function resolveApiBase() {
         try {
             const u = new URL(location.href);
-            const isKnownHost = (u.port === '3011' || u.port === '8080' || u.hostname === 'goatedcodoer' || u.hostname === '100.119.3.44');
+            const isKnownHost = (u.port === '8080');
             if (isKnownHost) {
                 return location.origin.replace(/\/$/, '');
             }
@@ -37,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             if (hintedRaw) {
                 const h = new URL(hintedRaw);
-                const hintedKnown = (h.port === '3011' || h.port === '8080' || h.hostname === 'goatedcodoer' || h.hostname === '100.119.3.44');
+                const hintedKnown = (h.port === '8080');
                 if (hintedKnown) return hintedRaw;
             }
         } catch (_) {
@@ -100,6 +100,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const promptClassInputEl = elements.promptClassInputEl;
     const promptTypeSuggestEl  = el('prompt-type-suggest');
     const promptClassSuggestEl = el('prompt-class-suggest');
+
+    // Add missing departmentSelectEl definition
+    const departmentSelectEl = el('departmentSelect');
 
     // ---------- HELPER FUNCTIONS ----------
     const peso = n => new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(+n||0);
@@ -203,8 +206,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // If links came back empty, fix them via PUT now
                 if ((!created.itemTypeId && itemTypeIdHidden.value) || (!created.itemClassificationId && classIdHidden.value)) {
                     const fixBody = {
-                        itemTypeId: +itemTypeIdHidden.value, typeId: +itemTypeIdHidden.value, item_type_id: +itemTypeIdHidden.value,
-                        itemClassificationId: +classIdHidden.value, classificationId: +classIdHidden.value, item_classification_id: +classIdHidden.value
+                        itemTypeId: +itemTypeIdHidden.value, typeId: +itemTypeIdHidden.value, item_type_id: +itemTypeIdHidden.value, item_type: +itemTypeIdHidden.value,
+                        itemClassificationId: +classIdHidden.value, classificationId: +classIdHidden.value, item_classification_id: +classIdHidden.value, item_classification: +classIdHidden.value
                     };
                     try { await itemsApi.put(created.id, { ...created, ...fixBody }); } catch {}
                     created.itemTypeId = +itemTypeIdHidden.value;
@@ -334,11 +337,48 @@ document.addEventListener('DOMContentLoaded', () => {
         populateFormDropdowns: () => {
             if (!elements.assetFormEl) return;
             const opt = (list, valKey, txtKey) => list.map(x=>`<option value="${x[valKey]}">${x[txtKey]}</option>`).join('');
-            elements.assetFormEl.elements.departmentId.innerHTML = '<option value="">Select Department...</option>' + opt(state.allDepartments,'departmentId','departmentName');
-            elements.assetFormEl.elements.employeeId.innerHTML   = '<option value="">Select Employee...</option>' + opt(state.allUsers,'userId','fullName');
-            elements.assetFormEl.elements.encoderId.innerHTML    = '<option value="">Select Encoder...</option>' + opt(state.allUsers,'userId','fullName');
+            elements.assetFormEl.elements.departmentId.innerHTML = '<option value="">Select Department...</option>' + opt(state.allDepartments,'departmentid','departmentname');
+            elements.assetFormEl.elements.employeeId.innerHTML   = '<option value="">Select Employee...</option>' + opt(state.allUsers,'userid','fullname');
+            elements.assetFormEl.elements.encoderId.innerHTML    = '<option value="">Select Encoder...</option>' + opt(state.allUsers,'userid','fullname');
+            // FIX: Populate Item Type dropdown
+            if (elements.assetFormEl.elements.itemTypeId) {
+                elements.assetFormEl.elements.itemTypeId.innerHTML = '<option value="">Select Item Type...</option>' + opt(state.allItemTypes, 'id', 'typename');
+            }
         },
     };
+
+    // --- Initialization: Load all reference data from Supabase and populate dropdowns ---
+    async function initialize() {
+        try {
+            // Fetch all reference data in parallel
+            const [itemsRes, typesRes, classesRes, deptsRes, usersRes] = await Promise.all([
+                api.get('items'),
+                api.get('item-types'),
+                api.get('item-classifications'),
+                api.get('departments'),
+                api.get('users')
+            ]);
+            // Parse JSON responses
+            state.allItems = itemsRes.ok ? await itemsRes.json() : [];
+            state.allItemTypes = typesRes.ok ? await typesRes.json() : [];
+            state.allClassifications = classesRes.ok ? await classesRes.json() : [];
+            state.allDepartments = deptsRes.ok ? await deptsRes.json() : [];
+            state.allUsers = usersRes.ok ? await usersRes.json() : [];
+
+            // Populate dropdowns and typeaheads
+            ui.populateFormDropdowns();
+            attachAllTypeaheads();
+            attachPromptTypeaheads();
+            populateExistingSelectors();
+            ui.renderAssets();
+            ui.populateFilters();
+        } catch (e) {
+            showToast('Failed to load reference data: ' + (e.message || e), true);
+        }
+    }
+
+    // Call initialize on DOMContentLoaded
+    initialize();
 
     // ---------- GLOBAL APP ACTIONS ----------
     window.App = Object.assign(window.App || {}, { 
@@ -644,18 +684,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function populateExistingSelectors(){
-        if (!itemNameSelect || !itemTypeSelect || !classSelectEl) return;
+        if (!itemNameSelect || !itemTypeSelect || !classSelectEl || !departmentSelectEl) return;
         // Use full reference lists so all existing records appear, not just those used by assets
-        const items = uniqueBy(state.allItems.filter(i=>i.id!=null && (i.itemName || i.name)), i=>i.id)
-            .map(i=>({ itemId:i.id, itemName:(i.itemName || i.name) }));
-        const types = uniqueBy(state.allItemTypes.filter(t=>t.id!=null && (t.typeName || t.itemTypeName || t.name)), t=>t.id)
-            .map(t=>({ itemTypeId:t.id, itemTypeName:(t.typeName || t.itemTypeName || t.name) }));
-        const classes = uniqueBy(state.allClassifications.filter(c=>c.id!=null && (c.classificationName || c.name)), c=>c.id)
-            .map(c=>({ itemClassificationId:c.id, itemClassificationName:(c.classificationName || c.name) }));
+        // FIX: Use Supabase schema keys for items
+        const items = uniqueBy(state.allItems.filter(i=>i.id!=null && (i.itemname)), i=>i.id)
+            .map(i=>({ itemId:i.id, itemName:i.itemname }));
+        const types = uniqueBy(state.allItemTypes.filter(t=>t.id!=null && (t.typename)), t=>t.id)
+            .map(t=>({ itemTypeId:t.id, itemTypeName:t.typename }));
+        const classes = uniqueBy(state.allClassifications.filter(c=>c.id!=null && (c.classificationname)), c=>c.id)
+            .map(c=>({ itemClassificationId:c.id, itemClassificationName:c.classificationname }));
+        const departments = uniqueBy(state.allDepartments.filter(d=>d.departmentid!=null && (d.departmentname)), d=>d.departmentid)
+            .map(d=>({ departmentId:d.departmentid, departmentName:d.departmentname }));
 
         itemNameSelect.innerHTML = '<option value="">Select Item...</option>' + optionize(items, 'itemId', 'itemName');
         itemTypeSelect.innerHTML = '<option value="">Select Item Type...</option>' + optionize(types, 'itemTypeId', 'itemTypeName');
         classSelectEl.innerHTML  = '<option value="">Select Classification...</option>' + optionize(classes, 'itemClassificationId', 'itemClassificationName');
+        if (departmentSelectEl) departmentSelectEl.innerHTML = '<option value="">Select Department...</option>' + optionize(departments, 'departmentId', 'departmentName');
     }
 
     function handleItemSelectChange(){
@@ -1104,409 +1148,13 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.assetFormEl.elements.imageUrl.value = '';
             showToast(err.message || 'Image upload failed.', true);
         } finally {
-            __isUploadingImage = false; updateSaveEnabled();
+            __isUploadingImage = false;
+            updateSaveEnabled();
         }
     }
 
-    // ---------- DATE PICKER (Vanilla, JavaFX-friendly) ----------
-    (function(){
-        const inputEl = document.getElementById('purchaseDate');
-        const btnEl = document.getElementById('btn-date');
-        const popEl = document.getElementById('date-pop');
-        if (!inputEl || !btnEl || !popEl) return;
-
-        let viewDate = new Date();
-        let selected = null;
-        const weekdays = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-        const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-
-        function pad(n){ return String(n).padStart(2,'0'); }
-        function ymd(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
-        function parseYMD(s){
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
-            // Use local parsing to avoid UTC shifts
-            return parseDateFlexible(s);
-        }
-        function sameDay(a,b){ return a && b && a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
-
-        function render(){
-            const today = new Date();
-            const year = viewDate.getFullYear();
-            const month = viewDate.getMonth();
-            const first = new Date(year, month, 1);
-            const start = new Date(first);
-            start.setDate(first.getDate() - first.getDay()); // start from Sunday
-            const root = document.createElement('div');
-
-            // Header
-            const head = document.createElement('div');
-            head.className = 'dp-head';
-            const btnPrev = document.createElement('button'); btnPrev.type='button'; btnPrev.className='dp-btn'; btnPrev.textContent='‹';
-            const title = document.createElement('div'); title.className='dp-title'; title.textContent = `${months[month]} ${year}`;
-            const btnNext = document.createElement('button'); btnNext.type='button'; btnNext.className='dp-btn'; btnNext.textContent='›';
-            head.appendChild(btnPrev); head.appendChild(title); head.appendChild(btnNext);
-
-            // Table
-            const table = document.createElement('table'); table.className='dp-table';
-            const thead = document.createElement('thead'); const thr = document.createElement('tr');
-            weekdays.forEach(w=>{ const th=document.createElement('th'); th.textContent=w; thr.appendChild(th); });
-            thead.appendChild(thr); table.appendChild(thead);
-            const tbody = document.createElement('tbody');
-
-            let d = new Date(start);
-            for (let wk=0; wk<6; wk++){
-                const tr = document.createElement('tr');
-                for (let i=0;i<7;i++){
-                    const td = document.createElement('td');
-                    const a = document.createElement('button'); a.type='button'; a.className='dp-day'; a.textContent=String(d.getDate());
-                    if (d.getMonth() !== month) a.classList.add('out');
-                    if (sameDay(d, today)) a.classList.add('today');
-                    if (selected && sameDay(d, selected)) a.classList.add('sel');
-                    // Capture the current date value to avoid closure over the mutated `d`
-                    const pick = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-                    a.addEventListener('click', ()=>{
-                        selected = pick;
-                        inputEl.value = ymd(selected);
-                        inputEl.dispatchEvent(new Event('input', {bubbles:true}));
-                        inputEl.dispatchEvent(new Event('change', {bubbles:true}));
-                        hide();
-                    });
-                    td.appendChild(a); tr.appendChild(td); d.setDate(d.getDate()+1);
-                }
-                tbody.appendChild(tr);
-            }
-            table.appendChild(tbody);
-
-            btnPrev.addEventListener('click', ()=>{ viewDate = new Date(year, month-1, 1); update(); });
-            btnNext.addEventListener('click', ()=>{ viewDate = new Date(year, month+1, 1); update(); });
-
-            root.appendChild(head); root.appendChild(table);
-            popEl.innerHTML = '';
-            popEl.appendChild(root);
-        }
-
-        function show(){
-            const p = parseYMD((inputEl.value||'').trim());
-            selected = p || null;
-            viewDate = p ? new Date(p.getFullYear(), p.getMonth(), 1) : new Date();
-            render();
-            popEl.style.display = 'block';
-        }
-        function hide(){ popEl.style.display='none'; }
-        function toggle(){ if (popEl.style.display==='none' || !popEl.style.display) show(); else hide(); }
-        function update(){ render(); }
-
-        btnEl.addEventListener('click', (e)=>{ e.preventDefault(); toggle(); });
-        inputEl.addEventListener('focus', show);
-
-        document.addEventListener('mousedown', (ev)=>{
-            if (!popEl || popEl.style.display==='none') return;
-            if (ev.target===popEl || popEl.contains(ev.target)) return;
-            if (ev.target===inputEl || ev.target===btnEl) return;
-            hide();
-        });
-        document.addEventListener('keydown', (ev)=>{ if (ev.key==='Escape') hide(); });
-
-        const modal = document.getElementById('modal');
-        if (modal){
-            const mo = new MutationObserver(()=>{ if (!modal.classList.contains('open')) hide(); });
-            mo.observe(modal, { attributes:true, attributeFilter:['class'] });
-        }
-    })();
-
-    // ---------- INITIALIZATION ----------
-    const initialize = async () => {
-        try {
-            const res = await Promise.all([
-                api.get('assets'), itemsApi.get(), api.get('item-types'),
-                api.get('item-classifications'), api.get('departments'), api.get('users')
-            ]);
-            if (res.some(r => !r.ok)) throw new Error('One or more API endpoints failed.');
-            const [assets, items, types, classes, depts, users] = await Promise.all(res.map(r=>r.json()));
-
-            // Normalize collections
-            const assetsArr  = toArray(assets);
-            const itemsArr   = toArray(items);
-            const typesArr   = toArray(types);
-            const classesArr = toArray(classes);
-            const deptsArr   = toArray(depts);
-            const usersArr   = toArray(users);
-
-            // Build type and classification name lookup
-            const typeNameById = {};
-            typesArr.forEach(t => {
-                if (!t) return;
-                const tid = (t.id ?? t.itemTypeId ?? t.typeId);
-                const tname = (t.typeName ?? t.itemTypeName ?? t.name);
-                if (tid != null && tname) {
-                    typeNameById[String(tid)] = tname;
-                }
-            });
-            const classNameById = {};
-            classesArr.forEach(c => {
-                if (!c) return;
-                const cid = (c.id ?? c.classificationId ?? c.itemClassificationId);
-                const cname = (c.classificationName ?? c.name ?? c.class_name);
-                if (cid != null && cname) {
-                    classNameById[String(cid)] = cname;
-                }
-            });
-
-            // Normalize items to ensure id, itemName, itemTypeId/itemTypeName, itemClassificationId, and classificationName are present
-            const itemsNorm = itemsArr.map(x => {
-                const id = x.id ?? x.itemId;
-                const itemName = x.itemName ?? x.item_name;
-                let itemTypeId = x.itemTypeId ?? x.typeId ?? x.item_type_id ?? x.item_type ?? x.itemType?.id;
-                let itemTypeName = x.itemTypeName ?? x.typeName ?? x.itemType?.typeName ?? x.itemType?.itemTypeName ?? (itemTypeId != null ? typeNameById[String(itemTypeId)] : undefined);
-                if ((itemTypeId == null || itemTypeId === '') && itemTypeName) {
-                    const tMatch = typesArr.find(t => (t.typeName ?? t.itemTypeName ?? t.name ?? '').toString().trim().toLowerCase() === String(itemTypeName).trim().toLowerCase());
-                    if (tMatch) {
-                        itemTypeId = tMatch.id;
-                        itemTypeName = tMatch.typeName ?? tMatch.itemTypeName ?? tMatch.name;
-                    }
-                }
-                const itemClassificationId = x.itemClassificationId ?? x.classificationId ?? x.item_classification_id ?? x.item_classification ?? x.itemClassification?.id;
-                const classificationName = x.classificationName ?? x.itemClassificationName ?? x.itemClassification?.classificationName ?? classNameById[String(itemClassificationId)];
-                return { ...x, id, itemName, itemTypeId, itemTypeName, itemClassificationId, classificationName };
-            });
-
-            // Enrich assets with related names so UI always displays Item Type and Classification
-            const itemById = Object.fromEntries(itemsNorm.map(it => [String(it.id), it]));
-            const deptNameById = Object.fromEntries(deptsArr.map(d => [String(d.departmentId ?? d.id), d.departmentName ?? d.name]));
-            const userNameById = Object.fromEntries(usersArr.map(u => [String(u.userId ?? u.id), u.fullName ?? u.name]));
-
-            const assetsNorm = assetsArr.map(a => {
-                const itemId = a.itemId ?? a.id ?? a.assetItemId;
-                const item   = itemById[String(itemId)] || {};
-                // Try to resolve Type/Classification from asset first, fallback to item, then lookup by id
-                const itemTypeId = a.itemTypeId ?? a.typeId ?? item.itemTypeId;
-                const itemTypeName = a.itemTypeName ?? a.typeName ?? item.itemTypeName ?? (itemTypeId != null ? typeNameById[String(itemTypeId)] : undefined);
-                const itemClassificationId = a.itemClassificationId ?? a.classificationId ?? item.itemClassificationId;
-                const itemClassificationName = a.itemClassificationName ?? a.classificationName ?? item.classificationName ?? (itemClassificationId != null ? classNameById[String(itemClassificationId)] : undefined);
-                const departmentId = a.departmentId ?? a.deptId;
-                const departmentName = a.departmentName ?? deptNameById[String(departmentId)];
-                const employeeId = a.employeeId ?? a.assignedToId;
-                const encoderId = a.encoderId;
-                const employeeName = a.employeeName ?? userNameById[String(employeeId)];
-                const encoderName = a.encoderName ?? userNameById[String(encoderId)];
-                const itemName = a.itemName ?? item.itemName;
-                return {
-                    ...a,
-                    itemId,
-                    itemName,
-                    itemTypeId,
-                    itemTypeName,
-                    itemClassificationId,
-                    itemClassificationName,
-                    departmentId,
-                    departmentName,
-                    employeeId,
-                    employeeName,
-                    encoderId,
-                    encoderName
-                };
-            });
-
-            state.allAssets          = assetsNorm;
-            state.allItems           = itemsNorm;
-            state.allItemTypes       = typesArr;
-            state.allClassifications = classesArr;
-            state.allDepartments     = deptsArr;
-            state.allUsers           = usersArr;
-
-            ui.populateFilters();
-            ui.populateFormDropdowns();
-            ui.renderAssets();
-
-            // Wire the typeaheads once we have data
-            attachAllTypeaheads();
-            attachPromptTypeaheads();
-
-            // Watch other fields to enable/disable Save
-            const watchFields = [...elements.assetFormEl.querySelectorAll('input, select, textarea')];
-            watchFields.forEach(f => {
-                if (!f.__wired) {
-                    on(f, 'input', updateSaveEnabled); on(f, 'change', updateSaveEnabled);
-                    f.__wired = true;
-                }
-            });
-
-        } catch (err) {
-            console.error('Init failed', err);
-            elements.noResultsMessage.innerHTML = `<h3 class="font-semibold text-lg text-red-600">Failed to load data</h3><p>${err.message}</p>`;
-            elements.noResultsMessage.style.display = 'block';
-        }
-    };
-
-    // ---------- EVENT LISTENERS ----------
-    on(elements.searchEl, 'input', debounce(ui.renderAssets, 250));
-    on(elements.catFilterEl, 'change', ui.renderAssets);
-    on(elements.classFilterEl, 'change', ui.renderAssets);
-    on(elements.deptFilterEl, 'change', ui.renderAssets);
-    on(elements.newAssetBtn, 'click', handleNewAssetClick);
-    // Removed per requirements: no 'New Item' beside Item Name
-    // on(elements.newItemBtn, 'click', () => App.openPrompt('Item'));
-    on(elements.assetFormEl, 'submit', handleFormSubmit);
-    on(elements.promptSaveBtn, 'click', handlePromptSave);
-    on(elements.promptCancelBtn, 'click', App.closePrompt);
-    on(el('image-uploader'), 'change', handleImageUpload);
-
-    // Wire change handlers for existing-item mode selects
-    on(itemNameSelect, 'change', handleItemSelectChange);
-    on(itemTypeSelect, 'change', handleTypeSelectChange);
-    on(classSelectEl,  'change', handleClassSelectChange);
-
-    // Prevent body scroll when modal open
-    const observer = new MutationObserver(() => {
-        const isOpen = elements.modalEl?.classList.contains('open');
-        document.documentElement.style.overflow = isOpen ? 'hidden' : '';
-    });
-    if (elements.modalEl) observer.observe(elements.modalEl, { attributes: true, attributeFilter: ['class'] });
-
-    initialize();
+    // Attach New Asset button click handler
+    if (elements.newAssetBtn) {
+        elements.newAssetBtn.addEventListener('click', handleNewAssetClick);
+    }
 });
-
-// ----- Print to PDF: Asset Details -----
-window.App = window.App || {};
-window.App.printAsset = function() {
-    var a = null;
-    try {
-        if (window.App && window.App.__currentAsset) {
-            a = window.App.__currentAsset;
-        } else if (typeof state !== 'undefined' && state && state.currentAsset) {
-            a = state.currentAsset;
-        }
-    } catch (e) {}
-    if (!a) {
-        try { showToast('No asset selected to print.', true); } catch (e) { alert('No asset selected to print.'); }
-        return;
-    }
-
-    // Gather requester info
-    let vosUser = {};
-    try { vosUser = JSON.parse(localStorage.getItem('vosUser') || '{}') || {}; } catch (e) {}
-
-    // Helper to convert possibly-relative URLs to absolute, using API base when available
-    function toAbsoluteUrl(u) {
-        var url = (u || '').trim();
-        if (!url) return '';
-        var base = ((window.__API_BASE__ || location.origin || '') + '/').replace(/\/+$/, '/');
-        try {
-            var abs = new URL(url, base);
-            return abs.href;
-        } catch (e) {
-            try { return base.replace(/\/+$/, '/') + url.replace(/^\/+/, ''); } catch (_) { return url; }
-        }
-    }
-
-    const title = (a.itemName ? String(a.itemName) : 'Asset Details');
-    const assetId = (a.id ?? a.itemId ?? '—');
-    const itemType = (a.itemTypeName ?? '—');
-    const classification = (a.itemClassificationName ?? '—');
-    const department = (a.departmentName ?? '—');
-    const employee = (a.employeeName ?? '—');
-    const purchaseDate = (typeof formatDate === 'function') ? formatDate(a.dateAcquired) : (a.dateAcquired || '—');
-    const cost = (typeof peso === 'function') ? peso(a.total || a.totalCost) : (a.total || a.totalCost || '—');
-    const lifeSpan = (a.lifeSpan ? String(a.lifeSpan).replace(' months','') : '—');
-    const condition = (a.condition ?? '—');
-    const encoder = (a.encoderName ?? '—');
-    const rfid = (a.rfidCode || a.rfid || a.rfid_code || '—');
-    const barcode = (a.barCode || a.barcode || a.bar_code || '—');
-    const rawImg = (a.itemImage || '');
-    const img = rawImg ? toAbsoluteUrl(rawImg) : 'https://placehold.co/800x600/e2e8f0/475569?text=No+Image';
-    const now = new Date();
-    const nowStr = now.toLocaleString();
-
-    const css = `
-      @page { size: A4; margin: 18mm; }
-      * { box-sizing: border-box; }
-      body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; }
-      .header { display:flex; align-items:center; justify-content:space-between; border-bottom:2px solid #0ea5e9; padding-bottom:10px; margin-bottom:16px; }
-      .brand { font-size: 20px; font-weight: 800; letter-spacing: 1px; color:#0ea5e9; }
-      .meta { text-align:right; font-size: 12px; color:#475569; }
-      h1 { margin: 8px 0 2px; font-size: 18px; }
-      .subtle { color:#475569; font-size: 12px; }
-      .img { width:100%; max-height: 260px; object-fit: cover; border:1px solid #e2e8f0; border-radius: 8px; background:#f8fafc; }
-      .grid { display:grid; grid-template-columns: 1fr 1fr; gap:10px 16px; margin-top:12px; }
-      .card { border:1px solid #e2e8f0; border-radius:8px; padding:10px; }
-      .label { font-size:11px; color:#64748b; margin-bottom:4px; }
-      .value { font-size:14px; font-weight:600; color:#0f172a; word-break: break-word; }
-      table.spec { width:100%; border-collapse: collapse; margin-top: 12px; }
-      table.spec th, table.spec td { text-align:left; padding:8px 10px; border:1px solid #e2e8f0; font-size: 13px; vertical-align: top; }
-      table.spec th { width:32%; background:#f8fafc; color:#0f172a; }
-      .signatures { display:grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px; }
-      .sig-box { border-top:1px solid #0f172a; padding-top:6px; font-size: 12px; }
-      .footer { margin-top: 8px; font-size: 11px; color:#64748b; }
-      @media print { .no-print { display:none !important; } }
-    `;
-
-    const rows = [
-      ['Asset ID', String(assetId)],
-      ['Item Name', String(title)],
-      ['Item Type', String(itemType)],
-      ['Classification', String(classification)],
-      ['Department', String(department)],
-      ['Assigned To', String(employee)],
-      ['Purchase Date', String(purchaseDate)],
-      ['Cost', String(cost)],
-      ['Life Span (Years)', String(lifeSpan)],
-      ['Condition', String(condition)],
-      ['Encoded By', String(encoder)],
-      ['RFID Code', String(rfid)],
-      ['Bar Code', String(barcode)],
-    ];
-
-    const tableHtml = rows.map(([k,v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('');
-
-    const html = `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>Asset Details - ${title}</title>
-<style>${css}</style>
-</head>
-<body>
-  <div class="header">
-    <div class="brand">VERTEX</div>
-    <div class="meta">
-      <div><strong>Asset Details for Request</strong></div>
-      <div>${nowStr}</div>
-    </div>
-  </div>
-
-  <h1>${title}</h1>
-  <div class="subtle">Asset ID: ${assetId}</div>
-
-  <div style="margin: 12px 0 6px;">
-    <img class="img" src="${img}" alt="Asset Image" />
-  </div>
-
-  <table class="spec">${tableHtml}</table>
-
-  <div class="signatures">
-    <div>
-      <div class="sig-box">Requested By: ${vosUser.fullName || '&nbsp;'}</div>
-      <div class="subtle">${[vosUser.position, vosUser.department].filter(Boolean).join(' • ')}</div>
-      <div class="subtle" style="margin-top:4px;">Signature/Date: __________________________</div>
-    </div>
-    <div>
-      <div class="sig-box">Approved By:</div>
-      <div class="subtle">Signature/Date: __________________________</div>
-    </div>
-  </div>
-
-  <div class="footer">Generated by VERTEX Asset & Equipments • ${nowStr}</div>
-
-  <script>window.onload = function(){ try{ window.focus(); window.print(); }catch(e){} };</script>
-</body>
-</html>`;
-
-    const w = window.open('', '_blank');
-    if (!w) {
-        try { showToast('Popup blocked. Please allow popups to print.', true); } catch (e) { alert('Popup blocked. Please allow popups to print.'); }
-        return;
-    }
-    w.document.open('text/html');
-    w.document.write(html);
-    w.document.close();
-};

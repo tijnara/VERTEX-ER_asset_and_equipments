@@ -44,7 +44,7 @@
 <body>
 <script>
     try{ if(!localStorage.getItem('vosUser')){ location.replace('index.html'); } }catch(e){ location.replace('index.html'); }
-    window.__API_BASE__ = 'http://100.119.3.44:8080';
+    window.__API_BASE__ = 'http://localhost:8080';
     window.addEventListener('DOMContentLoaded', function(){
         var b = document.getElementById('btn-logout');
         if(b){ b.addEventListener('click', function(){ localStorage.removeItem('vosUser'); location.href='index.html'; }); }
@@ -168,7 +168,7 @@
                         </div>
                     </div>
 
-                    <div><label class="label">Department</label><select name="departmentId" required class="input"></select></div>
+                    <div><label class="label">Department</label><select id="departmentSelect" name="departmentId" required class="input"></select></div>
                     <div><label class="label">Cost (PHP)</label><input type="number" step="0.01" name="totalCost" required class="input"></div>
 
                     <div>
