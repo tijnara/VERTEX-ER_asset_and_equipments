@@ -1,13 +1,13 @@
-# VERTEX-ER — Assets & Equipments
+# Assets & Equipment
 
-This repository stores assets, equipment data, and utility scripts used by the VERTEX-ER project. It aims to keep equipment metadata, media, and processing tools organized so other projects and team members can discover, reuse, and extend equipment data consistently.
+This repository stores assets, equipment data, and utility scripts used across projects. It aims to keep equipment metadata, media, and processing tools organized so other projects and team members can reuse them.
 
 ## Repository layout
 
-- assets/        — Static assets (images, 3D models, icons, thumbnails)  
-- data/          — Equipment data files (JSON, CSV, YAML)  
-- scripts/       — Processing/export scripts and tooling (Python, shell, etc.)  
-- docs/          — Project documentation and references  
+- assets/        — Static assets (images, 3D models, icons, thumbnails)
+- data/          — Equipment data files (JSON, CSV, YAML)
+- scripts/       — Processing/export scripts and tooling (Python, shell, etc.)
+- docs/          — Project documentation and references
 - README.md      — This file
 
 > If the repository currently uses a different layout, update this README to match the actual folders.
@@ -20,12 +20,12 @@ Requirements
 - Any runtimes listed by scripts (check shebangs or per-script README)
 
 Clone and explore
-1. git clone https://github.com/tijnara/VERTEX-ER_asset_and_equipments.git
-2. cd VERTEX-ER_asset_and_equipments
+1. git clone https://github.com/tijnara/<repository>.git
+2. cd <repository>
 3. Inspect data/ and assets/ and read the per-folder READMEs (if present)
 
 Run a script (example)
-- Example (Python):  
+- Example (Python):
   python scripts/process_data.py --input data/equipment.json --output data/export.csv
 
 Adjust arguments to match the real script names and files in scripts/.
@@ -54,5 +54,5 @@ For questions or contributions, open an issue or reach out via the repository ow
 ---
 
 Notes:
-- I prepared this README template based on a typical assets-and-data repository. It can be customized with project-specific details, exact script names/arguments, badges, and a chosen license.
-- If you'd like, I can update the README with more precise instructions (script examples, data schema, badges) or commit this file to the repository — tell me what details to include or confirm and I will proceed.
+- This README is a generic template for an assets-and-data repository. It can be customized with project-specific details, exact script names/arguments, badges, and a chosen license.
+- If you'd like, I can further update the README with more precise instructions (script examples, data schema, badges) or add a LICENSE file — tell me what details to include or confirm and I will make those changes.
